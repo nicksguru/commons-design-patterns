@@ -5,14 +5,14 @@
     <parent>
         <groupId>guru.nicks.commons</groupId>
         <artifactId>parent</artifactId>
-        <version>0.1.0-alpha.6</version>
+        <version>0.1.0-alpha.7</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <!-- groupId is redundant (inherited from parent), but required by Maven Central -->
-    <groupId>guru.nicks.commons</groupId>
+    <groupId>${project.parent.groupId}</groupId>
     <artifactId>design-patterns</artifactId>
-    <version>0.1.0-alpha.6</version>
+    <version>${project.parent.version}</version>
 
     <name>Design Patterns</name>
     <description>Implementation of various design patterns</description>
