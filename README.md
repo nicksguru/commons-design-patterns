@@ -2,8 +2,8 @@
 
 ## Usage
 
-Add BOM to your project's `pom.xml` picking the most recent version from
-[Maven Central](https://central.sonatype.com/namespace/guru.nicks.commons), then import as follows:
+Pick the most recent version from
+[Maven Central](https://central.sonatype.com/namespace/guru.nicks.commons), then use as follows:
 
 ```xml
 <dependencyManagement>
