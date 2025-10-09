@@ -10,9 +10,9 @@
     <modelVersion>4.0.0</modelVersion>
 
     <!-- groupId is redundant (inherited from parent), but required by Maven Central -->
-    <groupId>${project.parent.groupId}</groupId>
+    <groupId>guru.nicks.commons</groupId>
     <artifactId>design-patterns</artifactId>
-    <version>${project.parent.version}</version>
+    <version>${guru.nicks.commons.version}</version>
 
     <name>Commons Design Patterns</name>
     <description>Implementation of various design patterns</description>
