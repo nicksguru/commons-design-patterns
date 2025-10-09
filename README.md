@@ -1,4 +1,6 @@
-# Design Patterns
+# Commons Design Patterns
+
+Implementation of various design patterns.
 
 ## Usage
 

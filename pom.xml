@@ -14,7 +14,7 @@
     <artifactId>design-patterns</artifactId>
     <version>${project.parent.version}</version>
 
-    <name>Design Patterns</name>
+    <name>Commons Design Patterns</name>
     <description>Implementation of various design patterns</description>
     <url>https://nicks.guru</url>
 
