@@ -106,13 +106,6 @@ public class NestedBuilderSteps {
         textWorld.setLastException(exception);
     }
 
-    @When("the build method is called")
-    public void theBuildMethodIsCalled() {
-        var exception = catchThrowable(() ->
-                builtNestedObject = nestedBuilder.build());
-        textWorld.setLastException(exception);
-    }
-
     @When("each nested builder builds its object and returns to parent")
     public void eachNestedBuilderBuildsItsObjectAndReturnsToParent() {
         var exception = catchThrowable(() -> {

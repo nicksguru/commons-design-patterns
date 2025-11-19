@@ -23,7 +23,7 @@ Feature: NestedBuilder pattern functionality
 
   Scenario: NestedBuilder abstract methods work correctly
     Given a concrete nested builder implementation
-    When the build method is called
+    When the nested builder builds the object
     Then the concrete object should be built
     And the and method should return the parent builder
     And no exception should be thrown
