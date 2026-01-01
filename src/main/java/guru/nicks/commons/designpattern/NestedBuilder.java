@@ -5,7 +5,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Builder nested in another one, with {@link #and()} bubbling up to the parent. For Lombok-managed builders,
- * {@link #build()} is auto-generated.
+ * {@link #build()} method is auto-generated.
  *
  * @param <T> type produced by this builder
  * @param <P> parent builder type
