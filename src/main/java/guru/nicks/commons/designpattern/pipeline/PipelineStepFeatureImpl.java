@@ -9,7 +9,6 @@ import jakarta.annotation.Nullable;
 import lombok.Builder;
 import lombok.Value;
 import lombok.experimental.NonFinal;
-import lombok.extern.jackson.Jacksonized;
 import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.core.annotation.AnnotatedElementUtils;
@@ -35,7 +34,6 @@ import static guru.nicks.commons.validation.dsl.ValiDsl.checkNotNull;
  */
 @Value
 @NonFinal
-@Jacksonized
 @Builder(toBuilder = true)
 @SuppressWarnings("rawtypes") // can't use generic types ('Step<?, ?>') in cache because of type erasure
 public class PipelineStepFeatureImpl {
@@ -60,7 +58,6 @@ public class PipelineStepFeatureImpl {
      */
     public static List<PipelineStepFeatureImpl> findFeatures(Class<? extends PipelineStep> clazz) {
         // 'get' method may return null as per Caffeine specs, but never does in this particular case
-        //noinspection DataFlowIssue
         return FEATURE_CACHE.get(clazz, PipelineStepFeatureImpl::findFeaturesWithoutCache);
     }
 
