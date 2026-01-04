@@ -50,7 +50,7 @@ public class ThreadSafeInfiniteIterator<T> implements Iterator<T> {
             throw new NoSuchElementException();
         }
 
-        return LockUtils.returnWithExclusiveLock(lock, () -> {
+        return LockUtils.withExclusiveLock(lock, () -> {
             if (!delegate.hasNext()) {
                 resetState(source);
             }

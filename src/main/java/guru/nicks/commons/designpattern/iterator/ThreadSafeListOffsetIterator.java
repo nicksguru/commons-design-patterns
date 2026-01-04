@@ -63,7 +63,7 @@ public class ThreadSafeListOffsetIterator<T> implements Iterator<T> {
 
     @Override
     public boolean hasNext() {
-        return LockUtils.returnWithExclusiveLock(lock, () -> {
+        return LockUtils.withExclusiveLock(lock, () -> {
             Pair<State, Integer> transition = suggestTransition();
 
             // next() won't be called if hasNext() returns false, so it's up to hasNext() to set final state
@@ -77,7 +77,7 @@ public class ThreadSafeListOffsetIterator<T> implements Iterator<T> {
 
     @Override
     public T next() {
-        return LockUtils.returnWithExclusiveLock(lock, () -> {
+        return LockUtils.withExclusiveLock(lock, () -> {
             Pair<State, Integer> transition = suggestTransition();
             state = transition.getLeft();
             currentIndex = transition.getRight();

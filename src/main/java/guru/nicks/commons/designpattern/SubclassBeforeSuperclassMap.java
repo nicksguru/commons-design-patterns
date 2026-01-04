@@ -61,28 +61,28 @@ public class SubclassBeforeSuperclassMap<K, V> implements Map<Class<? extends K>
 
     @Override
     public int size() {
-        return LockUtils.returnWithOptimisticReadOrRetry(lock, delegate::size);
+        return LockUtils.withOptimisticReadOrRetry(lock, delegate::size);
     }
 
     @Override
     public boolean isEmpty() {
-        return LockUtils.returnWithOptimisticReadOrRetry(lock, delegate::isEmpty);
+        return LockUtils.withOptimisticReadOrRetry(lock, delegate::isEmpty);
     }
 
     @Override
     public boolean containsKey(@Nullable Object key) {
-        return LockUtils.returnWithOptimisticReadOrRetry(lock, () -> delegate.containsKey(key));
+        return LockUtils.withOptimisticReadOrRetry(lock, () -> delegate.containsKey(key));
     }
 
     @Override
     public boolean containsValue(@Nullable Object value) {
-        return LockUtils.returnWithOptimisticReadOrRetry(lock, () -> delegate.containsValue(value));
+        return LockUtils.withOptimisticReadOrRetry(lock, () -> delegate.containsValue(value));
     }
 
     @Nullable
     @Override
     public V get(@Nullable Object key) {
-        return LockUtils.returnWithOptimisticReadOrRetry(lock, () -> delegate.get(key));
+        return LockUtils.withOptimisticReadOrRetry(lock, () -> delegate.get(key));
     }
 
     @Nullable
@@ -90,13 +90,13 @@ public class SubclassBeforeSuperclassMap<K, V> implements Map<Class<? extends K>
     public V put(@Nullable Class<? extends K> key, @Nullable V value) {
         // WARNING: inside this critical section, call delegate Map methods DIRECTLY because wrapper methods in this
         // class need a (non-exclusive) read lock which can't be acquired - an (exclusive) write lock already exists
-        return LockUtils.returnWithExclusiveLock(lock, () ->
+        return LockUtils.withExclusiveLock(lock, () ->
                 putInternalWithoutLock(key, value));
     }
 
     @Override
     public V remove(@Nullable Object key) {
-        return LockUtils.returnWithExclusiveLock(lock, () ->
+        return LockUtils.withExclusiveLock(lock, () ->
                 delegate.remove(key));
     }
 
@@ -104,36 +104,41 @@ public class SubclassBeforeSuperclassMap<K, V> implements Map<Class<? extends K>
     public void putAll(Map<? extends Class<? extends K>, ? extends V> source) {
         // WARNING: inside this critical section, call delegate Map methods DIRECTLY because wrapper methods in this
         // class need a (non-exclusive) read lock which can't be acquired - an (exclusive) write lock already exists
-        LockUtils.runWithExclusiveLock(lock, () -> {
+        LockUtils.withExclusiveLock(lock, () -> {
             for (var sourceEntry : source.entrySet()) {
                 putInternalWithoutLock(sourceEntry.getKey(), sourceEntry.getValue());
             }
+
+            return null;
         });
     }
 
     @Override
     public void clear() {
-        LockUtils.runWithExclusiveLock(lock, delegate::clear);
+        LockUtils.withExclusiveLock(lock, () -> {
+            delegate.clear();
+            return null;
+        });
     }
 
     @Override
     public Set<Class<? extends K>> keySet() {
-        return LockUtils.returnWithOptimisticReadOrRetry(lock, delegate::keySet);
+        return LockUtils.withOptimisticReadOrRetry(lock, delegate::keySet);
     }
 
     @Override
     public Collection<V> values() {
-        return LockUtils.returnWithOptimisticReadOrRetry(lock, delegate::values);
+        return LockUtils.withOptimisticReadOrRetry(lock, delegate::values);
     }
 
     @Override
     public Set<Entry<Class<? extends K>, V>> entrySet() {
-        return LockUtils.returnWithOptimisticReadOrRetry(lock, delegate::entrySet);
+        return LockUtils.withOptimisticReadOrRetry(lock, delegate::entrySet);
     }
 
     @Override
     public String toString() {
-        return LockUtils.returnWithOptimisticReadOrRetry(lock, delegate::toString);
+        return LockUtils.withOptimisticReadOrRetry(lock, delegate::toString);
     }
 
     /**
@@ -156,7 +161,7 @@ public class SubclassBeforeSuperclassMap<K, V> implements Map<Class<? extends K>
         }
 
         // WARNING: inside critical sections, call delegate Map's methods directly because locks are not reentrant
-        return LockUtils.returnWithOptimisticReadOrRetry(lock, () -> {
+        return LockUtils.withOptimisticReadOrRetry(lock, () -> {
             Entry<Class<? extends K>, V> mapEntry;
 
             // try fast direct lookup first
