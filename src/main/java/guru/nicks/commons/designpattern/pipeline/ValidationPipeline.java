@@ -28,7 +28,7 @@ public class ValidationPipeline<I> extends ChainOfResponsibility<I, Boolean, Pip
                     @Nullable
                     @Override
                     public Boolean apply(T input, Boolean alwaysNullAccumulator) {
-                        // return null to pass on to the next step
+                        // return null to move on to the next step
                         return predicate.test(input)
                                 ? null
                                 : Boolean.FALSE;

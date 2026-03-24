@@ -11,7 +11,6 @@ import org.springframework.data.util.Streamable;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -30,6 +29,8 @@ import java.util.stream.Collectors;
 public class Pipeline<I, O, S extends PipelineStep<I, O>>
         implements Function<I, PipelineState<I, O>>, Streamable<S> {
 
+    private final String toStringPrefix = getName() + "[";
+
     /**
      * Pipeline steps (immutable list). Order doesn't matter because the steps are always run via {@link #iterator()}.
      * This collection is not a raw {@link Iterable} because item indexes (which only {@link List} has) and/or item
@@ -40,14 +41,6 @@ public class Pipeline<I, O, S extends PipelineStep<I, O>>
     @Getter(value = AccessLevel.PROTECTED)
     private final List<S> steps;
 
-    /**
-     * @see #ensureStepsStringified()
-     */
-    private final AtomicBoolean stepsStringified = new AtomicBoolean();
-
-    /**
-     * Step runner, calls {@link PipelineStep#apply(Object, Object)} by default.
-     */
     @Getter
     @Setter
     @NonNull // Lombok creates runtime nullness check for this own annotation only
@@ -55,8 +48,8 @@ public class Pipeline<I, O, S extends PipelineStep<I, O>>
             step.apply(pipelineInput, previousStepResult);
 
     /**
-     * Constructor. Copies steps to ensure they have indexes ({@link Collection} doesn't have them) which may be needed
-     * in {@link #iterator()}.
+     * Constructor. Copies steps to ensure they have indexes ({@link Collection} doesn't have them - they may be needed
+     * in {@link #iterator()}), also for immutability.
      *
      * @param steps pipeline steps; order doesn't matter because they are executed via {@link #iterator()}
      */
@@ -99,7 +92,6 @@ public class Pipeline<I, O, S extends PipelineStep<I, O>>
      */
     @Override
     public PipelineState<I, O> apply(@Nullable I input) {
-        ensureStepsStringified();
         var state = initPipelineState(input);
         S previousStep = null;
 
@@ -117,8 +109,8 @@ public class Pipeline<I, O, S extends PipelineStep<I, O>>
             log.debug("Pipeline [{}] completed in {}ms: {}", getName(), state.getMillisElapsed(),
                     state.getStepDurations()
                             .stream()
-                            .map(stepInfo -> String.format("%s/%dms", stepInfo.getLeft(), stepInfo.getRight()))
-                            .collect(Collectors.joining(" -> ")));
+                            .map(stepInfo -> "%s:%dms".formatted(stepInfo.getLeft(), stepInfo.getRight()))
+                            .collect(Collectors.joining(" → ")));
         }
 
         return state;
@@ -134,7 +126,7 @@ public class Pipeline<I, O, S extends PipelineStep<I, O>>
     public String toString() {
         return stream()
                 .map(PipelineStep::toString)
-                .collect(Collectors.joining(" -> ", getName() + "[", "]"));
+                .collect(Collectors.joining(" → ", toStringPrefix, "]"));
     }
 
     /**
@@ -152,23 +144,12 @@ public class Pipeline<I, O, S extends PipelineStep<I, O>>
      * {@link PipelineState#getOutput()} can be {@code null}.
      *
      * @param pipelineState current (intermediate) pipeline state
-     * @param previousStep  previous step, can be {@code null}
+     * @param previousStep  previous step, may be {@code null}
      * @param nextStep      step to be invoked, never {@code null}
      * @return default implementation returns {@code false}, which means all steps are executed
      */
     protected boolean shouldStop(PipelineState<I, O> pipelineState, @Nullable S previousStep, S nextStep) {
         return false;
-    }
-
-    /**
-     * If {@link #stepsStringified} holds {@code false}, calls {@link PipelineStep#toString()} on each step to collect
-     * their {@link PipelineStepFeature} preemptively, so there's no time penalty during pipeline execution.
-     */
-    private void ensureStepsStringified() {
-        if (!stepsStringified.get()) {
-            steps.forEach(PipelineStep::toString);
-            stepsStringified.set(true);
-        }
     }
 
 }
