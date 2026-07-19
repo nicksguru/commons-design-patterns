@@ -55,11 +55,11 @@ public abstract class ReflectionVisitor<O> implements Function<Object, Optional<
             return Optional.empty();
         }
 
+        // 'get' method may return null as per Caffeine specs, but never does in this particular case
+        // because it stores (possibly empty) Optional's
         Optional<VisitorDefinition> visitor = cache.get(visitable.getClass(),
                 clazz -> visitorDefinitions.findEntryForClosestSuperclass(clazz).map(Map.Entry::getValue));
 
-        // 'get' method may return null as per Caffeine specs, but never does in this particular case
-        //noinspection DataFlowIssue
         return visitor.flatMap(it -> {
             try {
                 return (Optional<O>) it.getVisitorMethod().invoke(this, visitable);
