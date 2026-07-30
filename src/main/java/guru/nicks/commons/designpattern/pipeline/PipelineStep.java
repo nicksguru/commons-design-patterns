@@ -35,6 +35,27 @@ public abstract class PipelineStep<I, O> implements BiFunction<I, O, O> {
     private final AtomicReference<String> toStringResult = new AtomicReference<>();
 
     /**
+     * A shortcut to create an anonymous step class out of a function.
+     *
+     * @param name   step name (appears in logs)
+     * @param action action to perform
+     * @return action result
+     */
+    public static <I, O> PipelineStep<I, O> of(String name, BiFunction<I, O, O> action) {
+        return new PipelineStep<>() {
+            @Override
+            public String getName() {
+                return name;
+            }
+
+            @Override
+            public O apply(I pipelineInput, O previousStepResult) {
+                return action.apply(pipelineInput, previousStepResult);
+            }
+        };
+    }
+
+    /**
      * Returns step name.
      *
      * @return default implementation returns {@link Class#getSimpleName()}
