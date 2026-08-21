@@ -1,5 +1,6 @@
 package guru.nicks.commons.designpattern.visitor;
 
+import guru.nicks.commons.cache.domain.CacheConstants;
 import guru.nicks.commons.designpattern.SubclassBeforeSuperclassMap;
 import guru.nicks.commons.utils.ReflectionUtils;
 
@@ -38,10 +39,10 @@ public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Obje
             VisitorDefinition.collectVisitorMethodsOrThrow(getClass(), getStateClass());
 
     /**
-     * Cache storing visitor definitions for visited classes. Needed for long-lived visitors, such as Spring beans.
+     * Cache storing visitor definitions for visitable classes. Needed for long-lived visitors, such as Spring beans.
      */
-    private final Cache<Class<?>, Optional<VisitorDefinition>> cache = Caffeine.newBuilder()
-            .maximumSize(300)
+    private final Cache<Class<?>, Optional<VisitorDefinition>> visitorCache = Caffeine.newBuilder()
+            .maximumSize(CacheConstants.DEFAULT_CAFFEINE_CACHE_CAPACITY)
             .build();
 
     /**
@@ -73,14 +74,14 @@ public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Obje
     public Optional<O> apply(Object visitable, S state) {
         checkNotNull(visitable, "object to visit");
 
-        Optional<VisitorDefinition> visitor = cache.get(visitable.getClass(),
-                clazz -> visitorDefinitions.findEntryForClosestSuperclass(clazz).map(Map.Entry::getValue));
+        Optional<VisitorDefinition> visitor = visitorCache.get(visitable.getClass(), visitableClass ->
+                visitorDefinitions.findEntryForClosestSuperclass(visitableClass).map(Map.Entry::getValue));
 
-        // 'get' method may return null as per Caffeine specs, but never does in this particular case
-        //noinspection DataFlowIssue
-        return visitor.flatMap(it -> {
+        // 'get' method may return null as per Caffeine specs, but never does in this particular case -
+        // because it stores (possibly empty) Optional's
+        return visitor.flatMap(visitorDefinition -> {
             try {
-                return (Optional<O>) it.getVisitorMethod().invoke(this, visitable, state);
+                return (Optional<O>) visitorDefinition.getVisitorMethod().invoke(this, visitable, state);
             } catch (InvocationTargetException | IllegalAccessException e) {
                 throw new IllegalArgumentException("Visitor method access error: " + e.getMessage(), e);
             }

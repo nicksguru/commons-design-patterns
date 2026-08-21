@@ -1,5 +1,6 @@
 package guru.nicks.commons.designpattern.pipeline;
 
+import guru.nicks.commons.cache.domain.CacheConstants;
 import guru.nicks.commons.utils.ReflectionUtils;
 
 import am.ik.yavi.meta.ConstraintArguments;
@@ -43,7 +44,7 @@ public class PipelineStepFeatureImpl {
      */
     private static final Cache<Class<? extends PipelineStep>, List<PipelineStepFeatureImpl>> FEATURE_CACHE = Caffeine
             .newBuilder()
-            .maximumSize(300)
+            .maximumSize(CacheConstants.DEFAULT_CAFFEINE_CACHE_CAPACITY)
             .build();
 
     String name;

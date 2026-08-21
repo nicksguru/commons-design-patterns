@@ -1,5 +1,6 @@
 package guru.nicks.commons.designpattern.visitor;
 
+import guru.nicks.commons.cache.domain.CacheConstants;
 import guru.nicks.commons.designpattern.SubclassBeforeSuperclassMap;
 
 import com.github.benmanes.caffeine.cache.Cache;
@@ -37,8 +38,8 @@ public abstract class ReflectionVisitor<O> implements Function<Object, Optional<
     /**
      * Cache storing visitor definitions for visited classes. Needed for long-lived visitors, such as Spring beans.
      */
-    private final Cache<Class<?>, Optional<VisitorDefinition>> cache = Caffeine.newBuilder()
-            .maximumSize(300)
+    private final Cache<Class<?>, Optional<VisitorDefinition>> visitorCache = Caffeine.newBuilder()
+            .maximumSize(CacheConstants.DEFAULT_CAFFEINE_CACHE_CAPACITY)
             .build();
 
     /**
@@ -55,14 +56,14 @@ public abstract class ReflectionVisitor<O> implements Function<Object, Optional<
             return Optional.empty();
         }
 
-        // 'get' method may return null as per Caffeine specs, but never does in this particular case
+        // 'get' method may return null as per Caffeine specs, but never does in this particular case -
         // because it stores (possibly empty) Optional's
-        Optional<VisitorDefinition> visitor = cache.get(visitable.getClass(),
-                clazz -> visitorDefinitions.findEntryForClosestSuperclass(clazz).map(Map.Entry::getValue));
+        Optional<VisitorDefinition> visitor = visitorCache.get(visitable.getClass(), visitableClass ->
+                visitorDefinitions.findEntryForClosestSuperclass(visitableClass).map(Map.Entry::getValue));
 
-        return visitor.flatMap(it -> {
+        return visitor.flatMap(visitorDefinition -> {
             try {
-                return (Optional<O>) it.getVisitorMethod().invoke(this, visitable);
+                return (Optional<O>) visitorDefinition.getVisitorMethod().invoke(this, visitable);
             } catch (InvocationTargetException | IllegalAccessException e) {
                 throw new IllegalStateException("Visitor method access error: " + e.getMessage(), e);
             }
