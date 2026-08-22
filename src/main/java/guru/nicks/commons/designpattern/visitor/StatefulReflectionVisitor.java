@@ -2,6 +2,7 @@ package guru.nicks.commons.designpattern.visitor;
 
 import guru.nicks.commons.cache.domain.CacheConstants;
 import guru.nicks.commons.designpattern.SubclassBeforeSuperclassMap;
+import guru.nicks.commons.utils.ExceptionUtils;
 import guru.nicks.commons.utils.ReflectionUtils;
 
 import com.github.benmanes.caffeine.cache.Cache;
@@ -19,7 +20,7 @@ import static guru.nicks.commons.validation.dsl.ValiDsl.checkNotNull;
 
 /**
  * {@link ReflectionVisitor} augmented with state (passed to each visitor call) added, which lets keep visitors
- * immutable.
+ * immutable. Each visitor method must:
  * <ul>
  *  <li>be annotated with {@link ReflectionVisitorMethod @ReflectionVisitorMethod}</li>
  *  <li>be public</li>
@@ -46,8 +47,7 @@ public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Obje
             .build();
 
     /**
-     * Creates a state object which is then passed to {@link #apply(Object, Object)}. Default implementation
-     * instantiates {@code S}.
+     * Creates a {@link #getStateClass() state object} to be passed to {@link #apply(Object, Object)}.
      *
      * @return state object
      */
@@ -56,8 +56,12 @@ public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Obje
         return ReflectionUtils.instantiateEvenWithoutDefaultConstructor(clazz);
     }
 
+    /**
+     * This method is {@code final} because it's called from constructor, so it must not have side effects regarding the
+     * incomplete {@code this}. It finds the first materialized generic type ({@code S}) of the class.
+     */
     @SuppressWarnings("unchecked")
-    public Class<? extends S> getStateClass() {
+    public final Class<? extends S> getStateClass() {
         return (Class<? extends S>) ReflectionUtils
                 .findFirstMaterializedGenericType(getClass(), StatefulReflectionVisitor.class)
                 .orElseThrow(() -> new IllegalStateException("Failed to infer state class"));
@@ -81,9 +85,17 @@ public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Obje
         // because it stores (possibly empty) Optional's
         return visitor.flatMap(visitorDefinition -> {
             try {
-                return (Optional<O>) visitorDefinition.getVisitorMethod().invoke(this, visitable, state);
+                Object result = visitorDefinition.getVisitorMethod().invoke(this, visitable, state);
+
+                if (result == null) {
+                    throw new IllegalStateException("Visitor method returned null instead of Optional: "
+                            + visitorDefinition.getVisitorMethod());
+                }
+
+                return (Optional<O>) result;
             } catch (InvocationTargetException | IllegalAccessException e) {
-                throw new IllegalArgumentException("Visitor method access error: " + e.getMessage(), e);
+                Throwable cause = ExceptionUtils.unwrapInvocationTargetException(e);
+                throw new IllegalStateException("Visitor method error: " + cause.getMessage(), cause);
             }
         });
     }

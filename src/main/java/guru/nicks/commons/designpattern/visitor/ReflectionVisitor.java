@@ -2,6 +2,7 @@ package guru.nicks.commons.designpattern.visitor;
 
 import guru.nicks.commons.cache.domain.CacheConstants;
 import guru.nicks.commons.designpattern.SubclassBeforeSuperclassMap;
+import guru.nicks.commons.utils.ExceptionUtils;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -63,9 +64,17 @@ public abstract class ReflectionVisitor<O> implements Function<Object, Optional<
 
         return visitor.flatMap(visitorDefinition -> {
             try {
-                return (Optional<O>) visitorDefinition.getVisitorMethod().invoke(this, visitable);
+                Object result = visitorDefinition.getVisitorMethod().invoke(this, visitable);
+
+                if (result == null) {
+                    throw new IllegalStateException("Visitor method returned null instead of Optional: "
+                            + visitorDefinition.getVisitorMethod());
+                }
+
+                return (Optional<O>) result;
             } catch (InvocationTargetException | IllegalAccessException e) {
-                throw new IllegalStateException("Visitor method access error: " + e.getMessage(), e);
+                Throwable cause = ExceptionUtils.unwrapInvocationTargetException(e);
+                throw new IllegalStateException("Visitor method error: " + cause.getMessage(), cause);
             }
         });
     }

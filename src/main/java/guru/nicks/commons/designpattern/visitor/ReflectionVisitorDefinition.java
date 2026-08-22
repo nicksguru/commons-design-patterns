@@ -39,8 +39,8 @@ public abstract class ReflectionVisitorDefinition {
     }
 
     /**
-     * Finds methods annotated with {@link ReflectionVisitor @ReflectionVisitor} in the given class (also in its
-     * superclasses/superinterfaces) and verifies their signatures:
+     * Finds methods annotated with {@link ReflectionVisitorMethod @ReflectionVisitorMethod} in the given class (also in
+     * its superclasses/superinterfaces) and verifies their signatures:
      * <ul>
      *  <li>access level - must be {@code public}</li>
      *  <li>name - must be {@value #VISITOR_METHOD_NAME}</li>
