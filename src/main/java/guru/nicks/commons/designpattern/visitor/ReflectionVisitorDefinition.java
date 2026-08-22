@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 
@@ -61,7 +62,8 @@ public abstract class ReflectionVisitorDefinition {
                 _ReflectionVisitorDefinitionCollectVisitorMethodsOrThrowArgumentsMeta.NUMBEROFMETHODARGUMENTS.name()
         ).greaterThan(0);
 
-        List<Method> visitors = ReflectionUtils.findAnnotatedMethods(source, ReflectionVisitorMethod.class);
+        List<Method> visitors = removeOverriddenMethods(
+                ReflectionUtils.findAnnotatedMethods(source, ReflectionVisitorMethod.class));
         visitors.forEach(method -> validateVisitorMethod(method, numberOfMethodArguments));
 
         if (visitors.isEmpty()) {
@@ -70,6 +72,30 @@ public abstract class ReflectionVisitorDefinition {
         }
 
         return visitors;
+    }
+
+    /**
+     * Removes methods that are override-equivalent (same name and parameter types, as per the Java Language
+     * Specification) to another, more-derived method. Because
+     * {@link ReflectionUtils#findAnnotatedMethods(Class, Class)} returns methods in class-hierarchy order (subclass
+     * declarations first), keeping the first occurrence of each signature preserves the most-derived declaration.
+     * <p>
+     * This approach lets a subclass override an annotated visitor method without re-annotating it (or re-annotating it)
+     * - the override gets invoked instead of both being registered and clashing with a confusing 'two visitors' error.
+     *
+     * @param methods visitor methods in class-hierarchy order (most-derived first)
+     * @return methods with overridden (less-derived) duplicates removed, original relative order preserved
+     */
+    private static List<Method> removeOverriddenMethods(List<Method> methods) {
+        record MethodSignature(String name, List<Class<?>> parameterTypes) {
+        }
+
+        var seenSignatures = new HashSet<MethodSignature>();
+        return methods.stream()
+                .filter(method -> seenSignatures.add(new MethodSignature(
+                        method.getName(),
+                        List.of(method.getParameterTypes()))))
+                .toList();
     }
 
     private static void validateVisitorMethod(Method method, int expectedMethodArgumentCount) {

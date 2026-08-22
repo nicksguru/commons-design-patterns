@@ -23,7 +23,7 @@ public class StatefulReflectionVisitorSteps {
     // DI
     private final TextWorld textWorld;
 
-    private TestVisitor visitor;
+    private StatefulReflectionVisitor<VisitorState, String> visitor;
     private VisitorState state;
     private Optional<String> result;
 
@@ -43,6 +43,18 @@ public class StatefulReflectionVisitorSteps {
         } catch (Exception e) {
             textWorld.setLastException(e);
         }
+    }
+
+    @Given("a stateful reflection visitor is created with a method that throws an exception")
+    public void aStatefulReflectionVisitorIsCreatedWithAMethodThatThrowsAnException() {
+        visitor = new ExceptionThrowingTestVisitor();
+        state = visitor.createNewState();
+    }
+
+    @Given("a stateful reflection visitor overrides an annotated visitor method without re-annotating it")
+    public void aStatefulReflectionVisitorOverridesAnAnnotatedVisitorMethodWithoutReAnnotatingIt() {
+        visitor = new OverridingTestVisitor();
+        state = visitor.createNewState();
     }
 
     @When("a visitable object of type {string} is visited")
@@ -68,6 +80,15 @@ public class StatefulReflectionVisitorSteps {
         }
     }
 
+    @When("an object that triggers the stateful visitor exception is visited")
+    public void anObjectThatTriggersTheStatefulVisitorExceptionIsVisited() {
+        try {
+            result = visitor.apply(new SimpleVisitable(), state);
+        } catch (Exception e) {
+            textWorld.setLastException(e);
+        }
+    }
+
     @Then("the visitor should process the object")
     public void theVisitorShouldProcessTheObject() {
         assertThat(result)
@@ -88,10 +109,21 @@ public class StatefulReflectionVisitorSteps {
         assertThat(state.getValue()).isNotNull();
     }
 
-    @Then("the visitor should return an empty result")
-    public void theVisitorShouldReturnAnEmptyResult() {
-        assertThat(textWorld.getLastException()).isNotNull();
-        assertThat(textWorld.getLastException()).isInstanceOf(NullPointerException.class);
+    @Then("the stateful overridden visitor method should be invoked")
+    public void theStatefulOverriddenVisitorMethodShouldBeInvoked() {
+        assertThat(result)
+                .as("result")
+                .contains("overridden-visited");
+        assertThat(state.getValue())
+                .as("state value")
+                .isEqualTo("overridden-processed");
+    }
+
+    @Then("an empty stateful Optional should be returned")
+    public void anEmptyStatefulOptionalShouldBeReturned() {
+        assertThat(result)
+                .as("result")
+                .isEmpty();
     }
 
     @Then("the state should contain the value {string}")
@@ -160,6 +192,30 @@ public class StatefulReflectionVisitorSteps {
         @ReflectionVisitorMethod
         public Optional<String> visit(SimpleVisitable visitable, String wrongStateType) {
             return Optional.empty();
+        }
+    }
+
+    /**
+     * Visitor whose method throws - the exception must propagate to the caller unchanged (exception transparency).
+     */
+    public static class ExceptionThrowingTestVisitor extends StatefulReflectionVisitor<VisitorState, String> {
+
+        @ReflectionVisitorMethod
+        public Optional<String> visit(SimpleVisitable visitable, VisitorState state) {
+            throw new IllegalStateException("Stateful test exception");
+        }
+    }
+
+    /**
+     * Overrides the superclass's annotated visitor method WITHOUT re-annotating it - the override must be invoked
+     * instead of both methods being registered and clashing.
+     */
+    public static class OverridingTestVisitor extends TestVisitor {
+
+        @Override
+        public Optional<String> visit(SimpleVisitable visitable, VisitorState state) {
+            state.setValue("overridden-processed");
+            return Optional.of("overridden-visited");
         }
     }
 

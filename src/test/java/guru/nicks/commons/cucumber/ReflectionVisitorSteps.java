@@ -53,6 +53,16 @@ public class ReflectionVisitorSteps {
         visitor = new ExceptionThrowingVisitor();
     }
 
+    @Given("a reflection visitor is created with a method that throws a checked exception")
+    public void aReflectionVisitorIsCreatedWithAMethodThatThrowsACheckedException() {
+        visitor = new CheckedExceptionThrowingVisitor();
+    }
+
+    @Given("a reflection visitor overrides an annotated visitor method without re-annotating it")
+    public void aReflectionVisitorOverridesAnAnnotatedVisitorMethodWithoutReAnnotatingIt() {
+        visitor = new OverridingVisitor();
+    }
+
     @Given("a reflection visitor is created with duplicate method signatures")
     public void aReflectionVisitorIsCreatedWithDuplicateMethodSignatures() {
         textWorld.setLastException(catchThrowable(DuplicateMethodVisitor::new));
@@ -94,6 +104,16 @@ public class ReflectionVisitorSteps {
         }
     }
 
+    @When("an object that triggers the checked exception is visited")
+    public void anObjectThatTriggersTheCheckedExceptionIsVisited() {
+        try {
+            visitedObject = new ExceptionTrigger();
+            result = visitor.apply(visitedObject);
+        } catch (Exception e) {
+            textWorld.setLastException(e);
+        }
+    }
+
     @When("objects of different types are visited")
     public void objectsOfDifferentTypesAreVisited() {
         visitedObjects.add(new TestString("string value"));
@@ -127,6 +147,16 @@ public class ReflectionVisitorSteps {
         assertThat(result.get())
                 .as("result.get().toString()")
                 .hasToString("Visited ChildTestObject");
+    }
+
+    @Then("the overridden visitor method should be invoked")
+    public void theOverriddenVisitorMethodShouldBeInvoked() {
+        assertThat(result)
+                .as("result")
+                .isPresent();
+        assertThat(result.get())
+                .as("result.get()")
+                .hasToString("Visited TestString: overridden");
     }
 
     @Then("an empty Optional should be returned")
@@ -233,6 +263,34 @@ public class ReflectionVisitorSteps {
         @ReflectionVisitorMethod
         public Optional<String> visit(ExceptionTrigger trigger) {
             throw new RuntimeException("Test exception");
+        }
+    }
+
+    public static class CheckedExceptionThrowingVisitor extends ReflectionVisitor<String> {
+
+        @ReflectionVisitorMethod
+        public Optional<String> visit(ExceptionTrigger trigger) throws Exception {
+            throw new Exception("Checked test exception");
+        }
+    }
+
+    public static class AnnotatedMethodVisitor extends ReflectionVisitor<String> {
+
+        @ReflectionVisitorMethod
+        public Optional<String> visit(TestString testString) {
+            return Optional.of("Visited TestString: annotated");
+        }
+    }
+
+    /**
+     * Overrides the superclass's annotated visitor method WITHOUT re-annotating it - the override must be invoked
+     * instead of both methods being registered and clashing.
+     */
+    public static class OverridingVisitor extends AnnotatedMethodVisitor {
+
+        @Override
+        public Optional<String> visit(TestString testString) {
+            return Optional.of("Visited TestString: overridden");
         }
     }
 

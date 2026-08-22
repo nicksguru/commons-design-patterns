@@ -7,7 +7,8 @@ import guru.nicks.commons.utils.ReflectionUtils;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import lombok.extern.slf4j.Slf4j;
+import jakarta.annotation.Nullable;
+import org.springframework.beans.BeanInstantiationException;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -15,8 +16,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
-
-import static guru.nicks.commons.validation.dsl.ValiDsl.checkNotNull;
 
 /**
  * {@link ReflectionVisitor} augmented with state (passed to each visitor call) added, which lets keep visitors
@@ -33,7 +32,6 @@ import static guru.nicks.commons.validation.dsl.ValiDsl.checkNotNull;
  * @param <S> visitor state type
  * @param <O> visitor output type
  */
-@Slf4j
 public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Object, S, Optional<O>> {
 
     private final SubclassBeforeSuperclassMap<?, VisitorDefinition> visitorDefinitions =
@@ -47,9 +45,14 @@ public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Obje
             .build();
 
     /**
-     * Creates a {@link #getStateClass() state object} to be passed to {@link #apply(Object, Object)}.
+     * Creates a {@link #getStateClass() state object} to be passed to {@link #apply(Object, Object)}. For the
+     * constructors and field initializers to run (which is normally the desired behavior), the state class must be a
+     * concrete class with an accessible no-arg constructor. If there is no such constructor, instantiation falls back
+     * to a constructor-bypassing mechanism that skips field initializers, and if that fails too, a
+     * {@link BeanInstantiationException} is thrown.
      *
      * @return state object
+     * @throws BeanInstantiationException state class could not be instantiated
      */
     public S createNewState() {
         Class<? extends S> clazz = getStateClass();
@@ -68,21 +71,23 @@ public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Obje
     }
 
     /**
-     * Finds visitor whose input class is the closest to {@code input} actual class.
+     * Invokes visitor whose input class is the closest to {@code input} actual class.
      *
-     * @param visitable any object is accepted because the matching visitor will (or will not be) found dynamically
+     * @param visitable any object - the matching visitor will (or will not be) found dynamically
+     * @param state     visitor state, will be passed to (and possibly mutated by) the matching visitor method
      * @return non-empty {@link Optional} if a visitor has been found and returned something
      */
     @SuppressWarnings("unchecked")
     @Override
-    public Optional<O> apply(Object visitable, S state) {
-        checkNotNull(visitable, "object to visit");
-
-        Optional<VisitorDefinition> visitor = visitorCache.get(visitable.getClass(), visitableClass ->
-                visitorDefinitions.findEntryForClosestSuperclass(visitableClass).map(Map.Entry::getValue));
+    public Optional<O> apply(@Nullable Object visitable, S state) {
+        if (visitable == null) {
+            return Optional.empty();
+        }
 
         // 'get' method may return null as per Caffeine specs, but never does in this particular case -
         // because it stores (possibly empty) Optional's
+        Optional<VisitorDefinition> visitor = visitorCache.get(visitable.getClass(), this::findVisitorWithoutCache);
+
         return visitor.flatMap(visitorDefinition -> {
             try {
                 Object result = visitorDefinition.getVisitorMethod().invoke(this, visitable, state);
@@ -93,11 +98,22 @@ public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Obje
                 }
 
                 return (Optional<O>) result;
-            } catch (InvocationTargetException | IllegalAccessException e) {
-                Throwable cause = ExceptionUtils.unwrapInvocationTargetException(e);
-                throw new IllegalStateException("Visitor method error: " + cause.getMessage(), cause);
+            }
+            // exception transparency: rethrow the original exception as-is, without wrapping
+            catch (InvocationTargetException e) {
+                throw ExceptionUtils.sneakyThrow(ExceptionUtils.unwrapInvocationTargetException(e));
+            } catch (IllegalAccessException e) {
+                throw new IllegalStateException("Visitor method access error: " + e.getMessage(), e);
             }
         });
+    }
+
+    /**
+     * Resolves the visitor definition (or its absence) for a visitable class. Hoisted to a method to avoid allocating a
+     * new Lambda on every {@link #apply(Object, Object)} call.
+     */
+    private Optional<VisitorDefinition> findVisitorWithoutCache(Class<?> visitableClass) {
+        return visitorDefinitions.findEntryForClosestSuperclass(visitableClass).map(Map.Entry::getValue);
     }
 
     private static class VisitorDefinition extends ReflectionVisitorDefinition {

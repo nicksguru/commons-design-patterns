@@ -21,7 +21,19 @@ Feature: ReflectionVisitor Pattern
   Scenario: Visitor method throwing exception
     Given a reflection visitor is created with a method that throws an exception
     When an object that triggers the exception is visited
-    Then IllegalStateException should be thrown
+    Then the exception should be of type "RuntimeException"
+    And the exception message should contain "Test exception"
+
+  Scenario: Visitor method throwing a checked exception
+    Given a reflection visitor is created with a method that throws a checked exception
+    When an object that triggers the checked exception is visited
+    Then the exception should be of type "Exception"
+    And the exception message should contain "Checked test exception"
+
+  Scenario: Un-annotated override of an annotated visitor method is invoked
+    Given a reflection visitor overrides an annotated visitor method without re-annotating it
+    When an object is visited
+    Then the overridden visitor method should be invoked
 
   Scenario: Visitor with duplicate method signatures
     Given a reflection visitor is created with duplicate method signatures

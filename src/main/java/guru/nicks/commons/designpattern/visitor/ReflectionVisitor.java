@@ -7,7 +7,6 @@ import guru.nicks.commons.utils.ExceptionUtils;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import jakarta.annotation.Nullable;
-import lombok.extern.slf4j.Slf4j;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -30,7 +29,6 @@ import java.util.stream.Collectors;
  *
  * @param <O> visitor output type
  */
-@Slf4j
 public abstract class ReflectionVisitor<O> implements Function<Object, Optional<O>> {
 
     private final SubclassBeforeSuperclassMap<?, VisitorDefinition> visitorDefinitions =
@@ -44,10 +42,10 @@ public abstract class ReflectionVisitor<O> implements Function<Object, Optional<
             .build();
 
     /**
-     * Finds visitor whose input class is the closest to the argument class. If the argument class is {@code null},
+     * Invokes visitor whose input class is the closest to the argument class. If the argument class is {@code null},
      * always returns {@link Optional#empty()}.
      *
-     * @param visitable any object - because the matching visitor will (or will not be) found dynamically
+     * @param visitable any object - the matching visitor will (or will not be) found dynamically
      * @return non-empty {@link Optional} if a visitor has been found and returned something
      */
     @SuppressWarnings("unchecked")
@@ -59,8 +57,7 @@ public abstract class ReflectionVisitor<O> implements Function<Object, Optional<
 
         // 'get' method may return null as per Caffeine specs, but never does in this particular case -
         // because it stores (possibly empty) Optional's
-        Optional<VisitorDefinition> visitor = visitorCache.get(visitable.getClass(), visitableClass ->
-                visitorDefinitions.findEntryForClosestSuperclass(visitableClass).map(Map.Entry::getValue));
+        Optional<VisitorDefinition> visitor = visitorCache.get(visitable.getClass(), this::findVisitorWithoutCache);
 
         return visitor.flatMap(visitorDefinition -> {
             try {
@@ -72,11 +69,22 @@ public abstract class ReflectionVisitor<O> implements Function<Object, Optional<
                 }
 
                 return (Optional<O>) result;
-            } catch (InvocationTargetException | IllegalAccessException e) {
-                Throwable cause = ExceptionUtils.unwrapInvocationTargetException(e);
-                throw new IllegalStateException("Visitor method error: " + cause.getMessage(), cause);
+            }
+            // exception transparency: rethrow the original exception as-is, without wrapping
+            catch (InvocationTargetException e) {
+                throw ExceptionUtils.sneakyThrow(ExceptionUtils.unwrapInvocationTargetException(e));
+            } catch (IllegalAccessException e) {
+                throw new IllegalStateException("Visitor method access error: " + e.getMessage(), e);
             }
         });
+    }
+
+    /**
+     * Resolves the visitor definition (or its absence) for a visitable class. Hoisted to a method to avoid allocating a
+     * new Lambda on every {@link #apply(Object)} call.
+     */
+    private Optional<VisitorDefinition> findVisitorWithoutCache(Class<?> visitableClass) {
+        return visitorDefinitions.findEntryForClosestSuperclass(visitableClass).map(Map.Entry::getValue);
     }
 
     private static class VisitorDefinition extends ReflectionVisitorDefinition {
