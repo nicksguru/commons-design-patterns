@@ -94,7 +94,7 @@ public class ThreadSafeListOffsetIterator<T> implements Iterator<T> {
      * Calculates next state and index based on current values. Also updates {@link #startIndex} to ensure it's within
      * the list boundaries (the list may have been modified during iteration).
      *
-     * @return next state and index ({@link State#FINISHED}/{@value  #FINISHED_INDEX} if there's nowhere to go)
+     * @return next state and index ({@link State#FINISHED}/{@value #FINISHED_INDEX} if there's nowhere to go)
      */
     private Pair<State, Integer> suggestTransition() {
         if (items.isEmpty()) {
@@ -124,8 +124,9 @@ public class ThreadSafeListOffsetIterator<T> implements Iterator<T> {
             case MOVED_FORWARD:
                 newIndex = currentIndex + 1;
 
-                // end of list reached - jump to #0 if startIndex isn't 0 (otherwise, the whole list has been processed)
-                if (newIndex == items.size()) {
+                // end of list reached ('>=', 'not '==', because the list may shrink) -
+                // jump to #0 if startIndex isn't 0 (otherwise, the whole list has been processed)
+                if (newIndex >= items.size()) {
                     if (startIndex == 0) {
                         newState = State.FINISHED;
                         newIndex = FINISHED_INDEX;
