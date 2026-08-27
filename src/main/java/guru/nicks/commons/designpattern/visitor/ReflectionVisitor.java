@@ -8,7 +8,6 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import jakarta.annotation.Nullable;
 
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.Optional;
@@ -58,25 +57,27 @@ public abstract class ReflectionVisitor<O> implements Function<Object, Optional<
         }
 
         Optional<VisitorDefinition> visitor = visitorClassRuntime.findVisitor(visitable.getClass());
+        if (visitor.isEmpty()) {
+            return Optional.empty();
+        }
 
-        return visitor.flatMap(visitorDefinition -> {
-            try {
-                Object result = visitorDefinition.getVisitorMethod().invoke(this, visitable);
+        VisitorDefinition visitorDefinition = visitor.get();
+        try {
+            // handle invocation (unlike Method.invoke) allocates no varargs array and does no per-call access checks
+            Object result = visitorDefinition.getVisitorMethodHandle().invoke(this, visitable);
 
-                if (result == null) {
-                    throw new IllegalStateException("Visitor method returned null instead of Optional: "
-                            + visitorDefinition.getVisitorMethod());
-                }
-
-                return (Optional<O>) result;
+            if (result == null) {
+                throw new IllegalStateException("Visitor method returned null instead of Optional: "
+                        + visitorDefinition.getVisitorMethod());
             }
-            // exception transparency: rethrow the original exception as-is, without wrapping
-            catch (InvocationTargetException e) {
-                throw ExceptionUtils.sneakyThrow(ExceptionUtils.unwrapInvocationTargetException(e));
-            } catch (IllegalAccessException e) {
-                throw new IllegalStateException("Visitor method access error: " + e.getMessage(), e);
-            }
-        });
+
+            return (Optional<O>) result;
+        }
+        // exception transparency: handle invocation throws the target's exception as-is (no
+        // InvocationTargetException wrapping), so rethrow it unchanged
+        catch (Throwable e) {
+            throw ExceptionUtils.sneakyThrow(e);
+        }
     }
 
     private static class VisitorDefinition extends ReflectionVisitorDefinition {

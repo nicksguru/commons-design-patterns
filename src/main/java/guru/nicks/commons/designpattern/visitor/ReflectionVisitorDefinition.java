@@ -6,6 +6,9 @@ import am.ik.yavi.meta.ConstraintArguments;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.HashSet;
@@ -28,15 +31,45 @@ public abstract class ReflectionVisitorDefinition {
     private final Method visitorMethod;
 
     /**
+     * Handle for {@link #visitorMethod}, created once here (at visitor class registration time). Unlike
+     * {@link Method#invoke(Object, Object...)}, its invocation allocates no varargs array, performs no per-call access
+     * checks, and throws the target method's exceptions directly, without {@link InvocationTargetException} wrapping.
+     */
+    private final MethodHandle visitorMethodHandle;
+
+    /**
      * Constructor.
      *
      * @param visitorMethod non-null method whose first parameter is the object being visited
+     * @throws IllegalStateException visitor method is not accessible for handle-based invocation (which requires the
+     *                               method and its declaring class to be public)
      */
     @ConstraintArguments
     protected ReflectionVisitorDefinition(Method visitorMethod) {
         this.visitorMethod = checkNotNull(visitorMethod,
                 _ReflectionVisitorDefinitionArgumentsMeta.VISITORMETHOD.name());
         visitableClass = this.visitorMethod.getParameterTypes()[0];
+        visitorMethodHandle = createVisitorMethodHandle(this.visitorMethod);
+    }
+
+    /**
+     * Creates a {@link MethodHandle} for the visitor method, so that the dispatch hot path avoids reflective invocation
+     * overhead. Validation (see {@link #collectVisitorMethodsOrThrow(Class, int)}) already enforces public visitor
+     * methods, so the public lookup suffices.
+     *
+     * @param visitorMethod validated (public) visitor method
+     * @return handle invoking the method on a visitor instance
+     * @throws IllegalStateException method is not accessible to the public lookup (non-public method or non-public
+     *                               declaring class)
+     */
+    private static MethodHandle createVisitorMethodHandle(Method visitorMethod) {
+        try {
+            return MethodHandles.publicLookup().unreflect(visitorMethod);
+        } catch (IllegalAccessException e) {
+            // fail fast at first instantiation of the visitor class, like the other definition validations
+            throw new IllegalStateException(
+                    "Visitor method is not accessible for handle-based invocation: " + visitorMethod, e);
+        }
     }
 
     /**
