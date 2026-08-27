@@ -19,7 +19,12 @@ public class ThreadSafeInfiniteIterator<T> implements Iterator<T> {
     private final StampedLock lock = new StampedLock();
 
     private final Iterable<T> source;
-    private boolean hasItems;
+
+    /**
+     * Written under the write lock in {@link #resetState(Iterable)}, read lock-free in
+     * {@link #hasNext()}/{@link #next()} - volatile bridges the visibility gap.
+     */
+    private volatile boolean hasItems;
 
     private Iterator<T> delegate;
 

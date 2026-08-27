@@ -35,8 +35,8 @@ public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Obje
 
     /**
      * Runtimes (visitor definitions plus resolution caches) shared by all instances of the same visitor class. Static,
-     * so that short-lived visitors don't pay the reflection scan and a throwaway cache on every instantiation. Keyed
-     * by visitor class, so visitable resolutions of different visitor classes never mix.
+     * so that short-lived visitors don't pay the reflection scan and a throwaway cache on every instantiation. Keyed by
+     * visitor class, so visitable resolutions of different visitor classes never mix.
      */
     private static final Cache<Class<?>, VisitorClassRuntime> VISITOR_CLASS_RUNTIMES = Caffeine.newBuilder()
             .maximumSize(CacheConstants.DEFAULT_CAFFEINE_CACHE_CAPACITY)
@@ -200,8 +200,7 @@ public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Obje
         }
 
         /**
-         * Resolves the visitor definition (or its absence) for a visitable class. Hoisted to a method to avoid
-         * allocating a new Lambda on every {@link #findVisitor(Class)} call.
+         * Resolves the visitor definition (or its absence) for a visitable class.
          */
         private Optional<VisitorDefinition> findVisitorWithoutCache(Class<?> visitableClass) {
             return visitorDefinitions.findEntryForClosestSuperclass(visitableClass).map(Map.Entry::getValue);
