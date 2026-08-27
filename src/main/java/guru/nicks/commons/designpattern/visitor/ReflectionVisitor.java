@@ -31,15 +31,17 @@ import java.util.stream.Collectors;
  */
 public abstract class ReflectionVisitor<O> implements Function<Object, Optional<O>> {
 
-    private final SubclassBeforeSuperclassMap<?, VisitorDefinition> visitorDefinitions =
-            VisitorDefinition.collectVisitorMethodsOrThrow(getClass());
-
     /**
-     * Cache storing visitor definitions for visited classes. Needed for long-lived visitors, such as Spring beans.
+     * Runtimes (visitor definitions plus resolution caches) shared by all instances of the same visitor class. Static,
+     * so that short-lived visitors don't pay the reflection scan and a throwaway cache on every instantiation. Keyed
+     * by visitor class, so visitable resolutions of different visitor classes never mix.
      */
-    private final Cache<Class<?>, Optional<VisitorDefinition>> visitorCache = Caffeine.newBuilder()
+    private static final Cache<Class<?>, VisitorClassRuntime> VISITOR_CLASS_RUNTIMES = Caffeine.newBuilder()
             .maximumSize(CacheConstants.DEFAULT_CAFFEINE_CACHE_CAPACITY)
             .build();
+
+    private final VisitorClassRuntime visitorClassRuntime = VISITOR_CLASS_RUNTIMES.get(getClass(),
+            VisitorClassRuntime::createFor);
 
     /**
      * Invokes visitor whose input class is the closest to the argument class. If the argument class is {@code null},
@@ -55,9 +57,7 @@ public abstract class ReflectionVisitor<O> implements Function<Object, Optional<
             return Optional.empty();
         }
 
-        // 'get' method may return null as per Caffeine specs, but never does in this particular case -
-        // because it stores (possibly empty) Optional's
-        Optional<VisitorDefinition> visitor = visitorCache.get(visitable.getClass(), this::findVisitorWithoutCache);
+        Optional<VisitorDefinition> visitor = visitorClassRuntime.findVisitor(visitable.getClass());
 
         return visitor.flatMap(visitorDefinition -> {
             try {
@@ -77,14 +77,6 @@ public abstract class ReflectionVisitor<O> implements Function<Object, Optional<
                 throw new IllegalStateException("Visitor method access error: " + e.getMessage(), e);
             }
         });
-    }
-
-    /**
-     * Resolves the visitor definition (or its absence) for a visitable class. Hoisted to a method to avoid allocating a
-     * new Lambda on every {@link #apply(Object)} call.
-     */
-    private Optional<VisitorDefinition> findVisitorWithoutCache(Class<?> visitableClass) {
-        return visitorDefinitions.findEntryForClosestSuperclass(visitableClass).map(Map.Entry::getValue);
     }
 
     private static class VisitorDefinition extends ReflectionVisitorDefinition {
@@ -112,6 +104,61 @@ public abstract class ReflectionVisitor<O> implements Function<Object, Optional<
                                 throw new IllegalStateException(
                                         "Two visitors for the same class: " + value1 + ", " + value2);
                             }, SubclassBeforeSuperclassMap::new));
+        }
+
+    }
+
+    /**
+     * Runtime data shared by all instances of one visitor class: collected visitor definitions plus a cache resolving
+     * visitable classes to matching definitions. Stored per visitor class (not per instance) in
+     * {@link #VISITOR_CLASS_RUNTIMES}, so that short-lived visitors reuse both the reflection results and the
+     * resolution cache.
+     */
+    private static final class VisitorClassRuntime {
+
+        private final SubclassBeforeSuperclassMap<?, VisitorDefinition> visitorDefinitions;
+
+        /**
+         * Cache storing visitor definitions for visited classes.
+         */
+        private final Cache<Class<?>, Optional<VisitorDefinition>> visitorCache = Caffeine.newBuilder()
+                .maximumSize(CacheConstants.DEFAULT_CAFFEINE_CACHE_CAPACITY)
+                .build();
+
+        private VisitorClassRuntime(SubclassBeforeSuperclassMap<?, VisitorDefinition> visitorDefinitions) {
+            this.visitorDefinitions = visitorDefinitions;
+        }
+
+        /**
+         * Collects visitor definitions for the given visitor class. Called on cache miss only, so the reflection scan
+         * runs once per visitor class; if it throws (invalid or missing visitor methods), the exception propagates to
+         * the constructor of the first instance.
+         *
+         * @param visitorClass visitor class to collect definitions for
+         * @return runtime for the visitor class
+         */
+        private static VisitorClassRuntime createFor(Class<?> visitorClass) {
+            return new VisitorClassRuntime(VisitorDefinition.collectVisitorMethodsOrThrow(visitorClass));
+        }
+
+        /**
+         * Resolves the visitor definition (or its absence) for a visitable class, using the shared cache.
+         *
+         * @param visitableClass class of the object being visited
+         * @return matching visitor definition, empty if this visitor class cannot visit it
+         */
+        private Optional<VisitorDefinition> findVisitor(Class<?> visitableClass) {
+            // 'get' method may return null as per Caffeine specs, but never does in this particular case -
+            // because it stores (possibly empty) Optional's
+            return visitorCache.get(visitableClass, this::findVisitorWithoutCache);
+        }
+
+        /**
+         * Resolves the visitor definition (or its absence) for a visitable class. Hoisted to a method to avoid
+         * allocating a new Lambda on every {@link #findVisitor(Class)} call.
+         */
+        private Optional<VisitorDefinition> findVisitorWithoutCache(Class<?> visitableClass) {
+            return visitorDefinitions.findEntryForClosestSuperclass(visitableClass).map(Map.Entry::getValue);
         }
 
     }
