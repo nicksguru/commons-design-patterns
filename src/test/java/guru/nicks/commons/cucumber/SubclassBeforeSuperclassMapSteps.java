@@ -35,6 +35,10 @@ public class SubclassBeforeSuperclassMapSteps {
 
     private SubclassBeforeSuperclassMap<Object, String> map;
     private Optional<Map.Entry<Class<?>, String>> foundEntry;
+    private String getOrDefaultResult;
+    private String putIfAbsentResult;
+    private String computeIfAbsentResult;
+    private List<ClassEntry> forEachEntries;
 
     @DataTableType
     public ClassEntry createClassEntry(Map<String, String> entry) {
@@ -192,6 +196,72 @@ public class SubclassBeforeSuperclassMapSteps {
         assertThat(foundEntry)
                 .as("foundEntry")
                 .isEmpty();
+    }
+
+    @When("{word} is looked up with getOrDefault using default {string}")
+    public void wordIsLookedUpWithGetOrDefaultUsingDefault(String className, String defaultValue) {
+        getOrDefaultResult = map.getOrDefault(getClassByName(className), defaultValue);
+    }
+
+    @Then("the getOrDefault result should be {string}")
+    public void theGetOrDefaultResultShouldBe(String expectedResult) {
+        assertThat(getOrDefaultResult)
+                .as("getOrDefault result")
+                .isEqualTo(expectedResult);
+    }
+
+    @When("the map is consumed with forEach")
+    public void theMapIsConsumedWithForEach() {
+        forEachEntries = new ArrayList<>();
+        map.forEach((key, value) -> forEachEntries.add(ClassEntry.builder()
+                .className(key.getSimpleName())
+                .value(value)
+                .build()));
+    }
+
+    @Then("the forEach-observed entries should be:")
+    public void theForEachObservedEntriesShouldBe(List<ClassEntry> expectedEntries) {
+        assertThat(forEachEntries)
+                .as("entries observed via forEach")
+                .containsExactlyElementsOf(expectedEntries);
+    }
+
+    @When("{word} is put if absent with value {string}")
+    public void wordIsPutIfAbsentWithValue(String className, String value) {
+        putIfAbsentResult = map.putIfAbsent(getClassByName(className), value);
+    }
+
+    @Then("the putIfAbsent result should be {string}")
+    public void thePutIfAbsentResultShouldBe(String expectedResult) {
+        assertThat(putIfAbsentResult)
+                .as("putIfAbsent result")
+                .isEqualTo(expectedResult);
+    }
+
+    @Then("the putIfAbsent result should be null")
+    public void thePutIfAbsentResultShouldBeNull() {
+        assertThat(putIfAbsentResult)
+                .as("putIfAbsent result")
+                .isNull();
+    }
+
+    @When("computeIfAbsent is called for {word} computing {string}")
+    public void computeIfAbsentIsCalledForComputing(String className, String computedValue) {
+        computeIfAbsentResult = map.computeIfAbsent(getClassByName(className), key -> computedValue);
+    }
+
+    @Then("the computeIfAbsent result should be {string}")
+    public void theComputeIfAbsentResultShouldBe(String expectedResult) {
+        assertThat(computeIfAbsentResult)
+                .as("computeIfAbsent result")
+                .isEqualTo(expectedResult);
+    }
+
+    @Then("the map keys should be in order:")
+    public void theMapKeysShouldBeInOrder(List<ClassEntry> expectedEntries) {
+        assertThat(map.keySet().stream().map(Class::getSimpleName).toList())
+                .as("map keys order")
+                .containsExactlyElementsOf(expectedEntries.stream().map(ClassEntry::getClassName).toList());
     }
 
     @Then("no concurrency exceptions should occur")

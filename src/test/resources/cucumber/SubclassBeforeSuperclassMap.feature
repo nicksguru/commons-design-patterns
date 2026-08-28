@@ -48,6 +48,68 @@ Feature: SubclassBeforeSuperclassMap
     When the closest superclass for Boolean is found
     Then no entry should be found
 
+  Scenario: Closest superclass resolution is unchanged for another subclass lookup
+    Given a map with the following class entries:
+      | class  | value  |
+      | Number | number |
+      | Object | object |
+    When the closest superclass for Long is found
+    Then the found entry should have key Number and value "number"
+
+  Scenario: getOrDefault agrees with the locked get
+    Given a map with the following class entries:
+      | class  | value  |
+      | Number | number |
+      | Object | object |
+    When Number is looked up with getOrDefault using default "default"
+    Then the getOrDefault result should be "number"
+
+  Scenario: getOrDefault returns the default value for a missing key
+    Given a map with the following class entries:
+      | class  | value  |
+      | Number | number |
+    When Boolean is looked up with getOrDefault using default "default"
+    Then the getOrDefault result should be "default"
+
+  Scenario: forEach observes the same entries and order as the locked views
+    Given a map with the following class entries:
+      | class   | value   |
+      | Integer | integer |
+      | Number  | number  |
+      | Object  | object  |
+    When the map is consumed with forEach
+    Then the forEach-observed entries should be:
+      | class   | value   |
+      | Integer | integer |
+      | Number  | number  |
+      | Object  | object  |
+
+  Scenario: putIfAbsent preserves subclass-before-superclass order and doesn't overwrite
+    Given a map with the following class entries:
+      | class  | value  |
+      | Object | object |
+    When Integer is put if absent with value "integer"
+    Then the putIfAbsent result should be null
+    When Integer is put if absent with value "other"
+    Then the putIfAbsent result should be "integer"
+    And the map keys should be in order:
+      | class   |
+      | Integer |
+      | Object  |
+
+  Scenario: computeIfAbsent computes only missing keys
+    Given a map with the following class entries:
+      | class  | value  |
+      | Object | object |
+    When computeIfAbsent is called for Integer computing "integer"
+    Then the computeIfAbsent result should be "integer"
+    When computeIfAbsent is called for Integer computing "other"
+    Then the computeIfAbsent result should be "integer"
+    And the map keys should be in order:
+      | class   |
+      | Integer |
+      | Object  |
+
   Scenario: Thread-safe operations
     Given a map with the following class entries:
       | class  | value  |

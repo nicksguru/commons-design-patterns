@@ -11,6 +11,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.locks.StampedLock;
+import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
+import java.util.function.Function;
+
+import static guru.nicks.commons.validation.dsl.ValiDsl.checkNotNull;
 
 /**
  * Decorates {@link LinkedHashMap} so that keys representing child classes are always stored before keys representing
@@ -26,10 +31,17 @@ import java.util.concurrent.locks.StampedLock;
  *  <li>{@link #containsKey(Object)}</li>
  *  <li>{@link #containsValue(Object)}</li>
  *  <li>{@link #get(Object)}</li>
+ *  <li>{@link #getOrDefault(Object, Object)}</li>
  *  <li>{@link #put(Class, Object)}</li>
  *  <li>{@link #putAll(Map)}</li>
+ *  <li>{@link #putIfAbsent(Class, Object)}</li>
  *  <li>{@link #remove(Object)}</li>
  *  <li>{@link #clear()}</li>
+ *  <li>{@link #forEach(BiConsumer)}</li>
+ *  <li>{@link #replaceAll(BiFunction)}</li>
+ *  <li>{@link #computeIfAbsent(Class, Function)}</li>
+ *  <li>{@link #compute(Class, BiFunction)}</li>
+ *  <li>{@link #merge(Class, Object, BiFunction)}</li>
  *  <li>{@link #entrySet()} - use this care because this is a view, not a copy, so processing this collection while
  *      another thread is putting something leads to unpredictable results</li>
  *  <li>{@link #keySet()} - use this care because this is a view, not a copy, so processing this collection while
@@ -140,6 +152,147 @@ public class SubclassBeforeSuperclassMap<K, V> implements Map<Class<? extends K>
         return LockUtils.withOptimisticReadOrRetry(lock, delegate::toString);
     }
 
+    @Override
+    public V getOrDefault(@Nullable Object key, @Nullable V defaultValue) {
+        return LockUtils.withOptimisticReadOrRetry(lock, () -> delegate.getOrDefault(key, defaultValue));
+    }
+
+    /**
+     * Iterates over a consistent snapshot of the map entries. The snapshot is copied under the lock so the action never
+     * traverses a half-mutated delegate, is never re-applied on optimistic-read retry and may safely call back into
+     * this map.
+     *
+     * @param action action to apply to each entry
+     */
+    @Override
+    public void forEach(BiConsumer<? super Class<? extends K>, ? super V> action) {
+        checkNotNull(action, "action");
+
+        var snapshot = LockUtils.withOptimisticReadOrRetry(lock, () -> new LinkedHashMap<>(delegate));
+        snapshot.forEach(action);
+    }
+
+    /**
+     * Replaces each value with the function result. The function runs under the exclusive lock, so it must be short
+     * and must not call back into this map (locks are not reentrant).
+     *
+     * @param function function computing a new value from the key and the current value
+     */
+    @Override
+    public void replaceAll(BiFunction<? super Class<? extends K>, ? super V, ? extends V> function) {
+        checkNotNull(function, "function");
+
+        // value-only update - key order (this map's core invariant) is unaffected, so delegate.replaceAll is safe
+        LockUtils.withExclusiveLock(lock, () -> {
+            delegate.replaceAll(function);
+            return null;
+        });
+    }
+
+    @Nullable
+    @Override
+    public V putIfAbsent(@Nullable Class<? extends K> key, @Nullable V value) {
+        // WARNING: inside this critical section, call delegate Map methods DIRECTLY because wrapper methods in this
+        // class need a (non-exclusive) read lock which can't be acquired - an (exclusive) write lock already exists
+        return LockUtils.withExclusiveLock(lock, () -> {
+            V existingValue = delegate.get(key);
+
+            // putInternalWithoutLock (not delegate.putIfAbsent) because inserting a new key must maintain key order
+            return (existingValue == null) ? putInternalWithoutLock(key, value) : existingValue;
+        });
+    }
+
+    /**
+     * Computes the value only when the key is missing. The mapping function runs OUTSIDE the lock (user code under
+     * the lock could deadlock), so concurrent callers may compute the same value twice - last write wins.
+     *
+     * @param key            key to look up
+     * @param mappingFunction function computing the value for a missing key
+     * @return current (existing or computed) value, {@code null} when the mapping function returned {@code null}
+     */
+    @Nullable
+    @Override
+    public V computeIfAbsent(@Nullable Class<? extends K> key,
+            Function<? super Class<? extends K>, ? extends V> mappingFunction) {
+        checkNotNull(mappingFunction, "mappingFunction");
+
+        V existingValue = get(key);
+        if (existingValue != null) {
+            return existingValue;
+        }
+
+        V computedValue = mappingFunction.apply(key);
+        if (computedValue == null) {
+            return null;
+        }
+
+        // putIfAbsent returns the winner's value when a concurrent call got there first
+        V winnerValue = putIfAbsent(key, computedValue);
+        return (winnerValue == null) ? computedValue : winnerValue;
+    }
+
+    /**
+     * Computes a new value for the key. The remapping function runs under the exclusive lock, so it must be short and
+     * must not call back into this map (locks are not reentrant).
+     *
+     * @param key               key to look up
+     * @param remappingFunction function computing a new value from the key and the current value
+     * @return new value, or {@code null} when nothing is mapped (a {@code null} result removes the mapping)
+     */
+    @Nullable
+    @Override
+    public V compute(@Nullable Class<? extends K> key,
+            BiFunction<? super Class<? extends K>, ? super V, ? extends V> remappingFunction) {
+        checkNotNull(remappingFunction, "remappingFunction");
+
+        // WARNING: inside this critical section, call delegate Map methods DIRECTLY because wrapper methods in this
+        // class need a (non-exclusive) read lock which can't be acquired - an (exclusive) write lock already exists
+        return LockUtils.withExclusiveLock(lock, () -> {
+            V newValue = remappingFunction.apply(key, delegate.get(key));
+
+            if (newValue == null) {
+                // Map contract: null result removes the mapping (removing a missing key is a no-op)
+                delegate.remove(key);
+            } else {
+                putInternalWithoutLock(key, newValue);
+            }
+
+            return newValue;
+        });
+    }
+
+    /**
+     * Merges the given value with the current one. The remapping function runs under the exclusive lock, so it must
+     * be short and must not call back into this map (locks are not reentrant).
+     *
+     * @param key               key to look up
+     * @param value             value to merge when the key is missing (or mapped to {@code null})
+     * @param remappingFunction function merging the current value with the given one
+     * @return new value, or {@code null} when nothing is mapped (a {@code null} result removes the mapping)
+     */
+    @Nullable
+    @Override
+    public V merge(@Nullable Class<? extends K> key, @Nullable V value,
+            BiFunction<? super V, ? super V, ? extends V> remappingFunction) {
+        checkNotNull(remappingFunction, "remappingFunction");
+
+        // WARNING: inside this critical section, call delegate Map methods DIRECTLY because wrapper methods in this
+        // class need a (non-exclusive) read lock which can't be acquired - an (exclusive) write lock already exists
+        return LockUtils.withExclusiveLock(lock, () -> {
+            V oldValue = delegate.get(key);
+            V newValue = (oldValue == null) ? value : remappingFunction.apply(oldValue, value);
+
+            if (newValue == null) {
+                // Map contract: null result removes the mapping (removing a missing key is a no-op)
+                delegate.remove(key);
+            } else {
+                putInternalWithoutLock(key, newValue);
+            }
+
+            return newValue;
+        });
+    }
+
     /**
      * Finds map entry corresponding to the closest superclass (or direct class) of {@code clazz} in the key set.
      *
@@ -151,13 +304,10 @@ public class SubclassBeforeSuperclassMap<K, V> implements Map<Class<? extends K>
             return Optional.empty();
         }
 
-        Class<? extends K> validClass;
-        // if argument class doesn't inherit from K, there's no superclass in the map
-        try {
-            validClass = (Class<? extends K>) clazz;
-        } catch (ClassCastException e) {
-            return Optional.empty();
-        }
+        // generic erasure makes this cast unchecked-only: it never fails at runtime, so unrelated classes are
+        // filtered later, by isAssignableFrom during the entry scan
+        @SuppressWarnings("unchecked")
+        Class<? extends K> validClass = (Class<? extends K>) clazz;
 
         // WARNING: inside critical sections, call delegate Map's methods directly because locks are not reentrant
         return LockUtils.withOptimisticReadOrRetry(lock, () -> {
