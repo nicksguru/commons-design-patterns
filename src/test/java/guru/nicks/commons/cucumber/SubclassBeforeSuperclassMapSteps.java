@@ -161,6 +161,29 @@ public class SubclassBeforeSuperclassMapSteps {
                 .isEqualTo(value);
     }
 
+    @Given("a null value is stored for {word}")
+    public void aNullValueIsStoredFor(String className) {
+        map.put(getClassByName(className), null);
+    }
+
+    @Then("the found entry should have key {word} and a null value")
+    public void theFoundEntryShouldHaveKeyAndANullValue(String className) {
+        assertThat(textWorld.getLastException())
+                .as("lastException")
+                .isNull();
+        assertThat(foundEntry)
+                .as("foundEntry")
+                .isPresent();
+
+        Class<?> expectedClass = getClassByName(className);
+        assertThat(foundEntry.get().getKey())
+                .as("foundEntry.key")
+                .isEqualTo(expectedClass);
+        assertThat(foundEntry.get().getValue())
+                .as("foundEntry.value")
+                .isNull();
+    }
+
     @Then("no entry should be found")
     public void noEntryShouldBeFound() {
         assertThat(textWorld.getLastException())

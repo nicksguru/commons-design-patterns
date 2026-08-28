@@ -3,8 +3,8 @@ package guru.nicks.commons.designpattern;
 import guru.nicks.commons.utils.LockUtils;
 
 import jakarta.annotation.Nullable;
-import lombok.extern.slf4j.Slf4j;
 
+import java.util.AbstractMap;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -52,7 +52,6 @@ import java.util.concurrent.locks.StampedLock;
  * @param <K> key type (its class will be stored, so don't pass {@code Class<I>}, it'd store {@code Class<Class>I>>})
  * @param <V> value type
  */
-@Slf4j
 public class SubclassBeforeSuperclassMap<K, V> implements Map<Class<? extends K>, V> {
 
     private final LinkedHashMap<Class<? extends K>, V> delegate = new LinkedHashMap<>();
@@ -162,23 +161,20 @@ public class SubclassBeforeSuperclassMap<K, V> implements Map<Class<? extends K>
 
         // WARNING: inside critical sections, call delegate Map's methods directly because locks are not reentrant
         return LockUtils.withOptimisticReadOrRetry(lock, () -> {
-            Entry<Class<? extends K>, V> mapEntry;
+            Entry<Class<? extends K>, V> mapEntry = null;
 
-            // try fast direct lookup first
-            V directValue = delegate.get(validClass);
-            // can't pass null value to Map.entry() - it calls checkNotNull() internally
-            if (directValue != null) {
-                mapEntry = Map.entry(validClass, directValue);
+            // exact hit short-circuits in O(1) even when the stored value is null (put accepts @Nullable V)
+            if (delegate.containsKey(validClass)) {
+                // unlike Map.entry(), SimpleImmutableEntry tolerates null values
+                mapEntry = new AbstractMap.SimpleImmutableEntry<>(validClass, delegate.get(validClass));
             } else {
-                mapEntry = delegate.entrySet()
-                        .stream()
-                        .filter(entry -> (entry.getKey() != null) && entry.getKey().isAssignableFrom(clazz))
-                        .findFirst()
-                        .orElse(null);
-            }
-
-            if ((mapEntry != null) && log.isTraceEnabled()) {
-                log.trace("Closest superclass of [{}]: [{}]", clazz.getName(), mapEntry.getKey().getName());
+                for (var entry : delegate.entrySet()) {
+                    if ((entry.getKey() != null) && entry.getKey().isAssignableFrom(clazz)) {
+                        // delegate's own entry is a live view - copy it, so callers can't mutate the map lock-free
+                        mapEntry = new AbstractMap.SimpleImmutableEntry<>(entry);
+                        break;
+                    }
+                }
             }
 
             return Optional.ofNullable(mapEntry);

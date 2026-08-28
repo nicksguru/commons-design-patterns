@@ -32,6 +32,14 @@ Feature: SubclassBeforeSuperclassMap
     When the closest superclass for Integer is found
     Then the found entry should have key Integer and value "integer"
 
+  Scenario: Exact key with null value is returned as-is, without superclass scan
+    Given a map with the following class entries:
+      | class  | value  |
+      | Object | object |
+    And a null value is stored for Number
+    When the closest superclass for Number is found
+    Then the found entry should have key Number and a null value
+
   Scenario: Finding entry for class with no superclass in map
     Given a map with the following class entries:
       | class  | value  |
