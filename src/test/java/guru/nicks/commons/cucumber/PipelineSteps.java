@@ -4,6 +4,7 @@ import guru.nicks.commons.cucumber.world.TextWorld;
 import guru.nicks.commons.designpattern.pipeline.Pipeline;
 import guru.nicks.commons.designpattern.pipeline.PipelineState;
 import guru.nicks.commons.designpattern.pipeline.PipelineStep;
+import guru.nicks.commons.designpattern.pipeline.PipelineStepRunner;
 
 import io.cucumber.java.DataTableType;
 import io.cucumber.java.en.Given;
@@ -34,6 +35,7 @@ public class PipelineSteps {
     private final TextWorld textWorld;
 
     private final List<String> loggedSteps = new ArrayList<>();
+    private List<TestStep> currentSteps;
     private TestPipeline pipeline;
     private PipelineState<String, String> pipelineState;
     private String pipelineToString;
@@ -55,11 +57,11 @@ public class PipelineSteps {
 
     @Given("a pipeline with the following steps:")
     public void aPipelineWithTheFollowingSteps(List<StepDefinition> stepDefinitions) {
-        List<TestStep> steps = stepDefinitions.stream()
+        currentSteps = stepDefinitions.stream()
                 .map(def -> new TestStep(def.getStepName(), def.getOutputValue()))
                 .toList();
 
-        pipeline = new TestPipeline(steps);
+        pipeline = new TestPipeline(currentSteps);
     }
 
     @Given("a pipeline with custom iterator that reverses steps:")
@@ -74,11 +76,19 @@ public class PipelineSteps {
     @Given("a custom step runner that logs step execution")
     public void aCustomStepRunnerThatLogsStepExecution() {
         loggedSteps.clear();
-        pipeline.setStepRunner((input, previousOutput, step) -> {
+
+        // step runner is injected at construction (it's final) - rebuild the pipeline from the same steps
+        pipeline = new TestPipeline(currentSteps, (input, previousOutput, step) -> {
             String output = step.apply(input, previousOutput);
             loggedSteps.add(step.toString());
             return output;
         });
+    }
+
+    @Given("a step runner that uppercases step output")
+    public void aStepRunnerThatUppercasesStepOutput() {
+        pipeline = new TestPipeline(currentSteps, (input, previousOutput, step) ->
+                step.apply(input, previousOutput).toUpperCase());
     }
 
     @Given("the pipeline is configured to stop after the second step")
@@ -219,6 +229,11 @@ public class PipelineSteps {
 
         public TestPipeline(Collection<? extends TestStep> steps) {
             super(steps);
+        }
+
+        public TestPipeline(Collection<? extends TestStep> steps,
+                PipelineStepRunner<String, String, TestStep> stepRunner) {
+            super(steps, stepRunner);
         }
 
         public void setShouldStopAfterSecondStep(boolean shouldStop) {

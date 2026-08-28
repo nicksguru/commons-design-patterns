@@ -29,6 +29,16 @@ Feature: Pipeline processing
     Then the pipeline output should be "Third"
     And each step should have been logged
 
+  Scenario: Pipeline uses the step runner injected at construction for every step
+    Given a pipeline with the following steps:
+      | stepName   | outputValue |
+      | FirstStep  | First       |
+      | SecondStep | Second      |
+      | ThirdStep  | Third       |
+    And a step runner that uppercases step output
+    When the pipeline is executed with input "test-input"
+    Then the pipeline output should be "THIRD"
+
   Scenario: Pipeline that stops early
     Given a pipeline with the following steps:
       | stepName   | outputValue |

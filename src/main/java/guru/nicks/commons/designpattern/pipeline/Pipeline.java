@@ -3,8 +3,6 @@ package guru.nicks.commons.designpattern.pipeline;
 import jakarta.annotation.Nullable;
 import lombok.AccessLevel;
 import lombok.Getter;
-import lombok.NonNull;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.util.Streamable;
 
@@ -13,6 +11,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+
+import static guru.nicks.commons.validation.dsl.ValiDsl.checkNotNull;
 
 /**
  * Pipeline which can be stopped after any step by {@link #shouldStop(PipelineState, PipelineStep, PipelineStep)}. Steps
@@ -41,20 +41,33 @@ public class Pipeline<I, O, S extends PipelineStep<I, O>>
     @Getter(value = AccessLevel.PROTECTED)
     private final List<S> steps;
 
-    @Getter
-    @Setter
-    @NonNull // Lombok creates runtime nullness check for this own annotation only
-    private PipelineStepRunner<I, O, S> stepRunner = (I pipelineInput, O previousStepResult, S step) ->
-            step.apply(pipelineInput, previousStepResult);
+    /**
+     * Runs pipeline steps. {@code final} (set once, at construction) for safe publication: pipelines are shareable
+     * between threads, and a runner swapped mid-run could tear a single {@link #apply(Object)} invocation.
+     */
+    private final PipelineStepRunner<I, O, S> stepRunner;
+
+    /**
+     * Constructor. Copies steps to ensure they have indexes ({@link Collection} doesn't have them - they may be needed
+     * in {@link #iterator()}), also for immutability. Steps are run directly, via
+     * {@link PipelineStep#apply(Object, Object)}.
+     *
+     * @param steps pipeline steps; order doesn't matter because they are executed via {@link #iterator()}
+     */
+    protected Pipeline(Collection<? extends S> steps) {
+        this(steps, (I pipelineInput, O previousStepResult, S step) -> step.apply(pipelineInput, previousStepResult));
+    }
 
     /**
      * Constructor. Copies steps to ensure they have indexes ({@link Collection} doesn't have them - they may be needed
      * in {@link #iterator()}), also for immutability.
      *
-     * @param steps pipeline steps; order doesn't matter because they are executed via {@link #iterator()}
+     * @param steps      pipeline steps; order doesn't matter because they are executed via {@link #iterator()}
+     * @param stepRunner runs pipeline steps
      */
-    protected Pipeline(Collection<? extends S> steps) {
+    protected Pipeline(Collection<? extends S> steps, PipelineStepRunner<I, O, S> stepRunner) {
         this.steps = List.copyOf(steps);
+        this.stepRunner = checkNotNull(stepRunner, "stepRunner");
     }
 
     /**
