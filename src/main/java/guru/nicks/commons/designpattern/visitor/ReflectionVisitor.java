@@ -126,6 +126,13 @@ public abstract class ReflectionVisitor<O> implements Function<Object, Optional<
                 .maximumSize(CacheConstants.DEFAULT_CAFFEINE_CACHE_CAPACITY)
                 .build();
 
+        /**
+         * Cache loader for {@link #visitorCache}, hoisted into a field because the method reference captures
+         * {@code this} - evaluated per call, it would allocate a fresh lambda on every lookup.
+         */
+        private final Function<Class<?>, Optional<VisitorDefinition>> visitorLoader =
+                this::findVisitorWithoutCache;
+
         private VisitorClassRuntime(SubclassBeforeSuperclassMap<?, VisitorDefinition> visitorDefinitions) {
             this.visitorDefinitions = visitorDefinitions;
         }
@@ -151,7 +158,7 @@ public abstract class ReflectionVisitor<O> implements Function<Object, Optional<
         private Optional<VisitorDefinition> findVisitor(Class<?> visitableClass) {
             // 'get' method may return null as per Caffeine specs, but never does in this particular case -
             // because it stores (possibly empty) Optional's
-            return visitorCache.get(visitableClass, this::findVisitorWithoutCache);
+            return visitorCache.get(visitableClass, visitorLoader);
         }
 
         /**

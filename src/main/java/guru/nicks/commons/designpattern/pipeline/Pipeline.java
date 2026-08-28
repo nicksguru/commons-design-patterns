@@ -130,13 +130,15 @@ public class Pipeline<I, O, S extends PipelineStep<I, O>>
     }
 
     /**
-     * Calls {@link PipelineState#PipelineState(Object, int)}. Can be overridden by subclasses to do something else.
+     * Calls {@link PipelineState#PipelineState(Object, int, boolean)}. Can be overridden by subclasses to do something
+     * else.
      *
      * @param input pipeline input
      * @return pipeline state
      */
     protected PipelineState<I, O> initPipelineState(@Nullable I input) {
-        return new PipelineState<>(input, steps.size());
+        // step timing is consumed only by the debug log in apply() - don't pay for it when debugging is off
+        return new PipelineState<>(input, steps.size(), log.isDebugEnabled());
     }
 
     /**

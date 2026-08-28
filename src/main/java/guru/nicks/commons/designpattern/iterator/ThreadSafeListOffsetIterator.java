@@ -4,7 +4,6 @@ import guru.nicks.commons.utils.LockUtils;
 
 import lombok.Getter;
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.Iterator;
 import java.util.List;
@@ -50,6 +49,13 @@ public class ThreadSafeListOffsetIterator<T> implements Iterator<T> {
     private int currentIndex = FINISHED_INDEX;
 
     /**
+     * Transition suggested by {@link #suggestTransition()} - written there, read by {@link #hasNext()} and
+     * {@link #next()}. Both fields are only touched under the exclusive lock, so no volatility is needed.
+     */
+    private State suggestedState;
+    private int suggestedIndex;
+
+    /**
      * Constructor.
      *
      * @param items      items to iterate - {@link List} because {@link List#get(int)} is needed
@@ -64,25 +70,25 @@ public class ThreadSafeListOffsetIterator<T> implements Iterator<T> {
     @Override
     public boolean hasNext() {
         return LockUtils.withExclusiveLock(lock, () -> {
-            Pair<State, Integer> transition = suggestTransition();
+            suggestTransition();
 
             // next() won't be called if hasNext() returns false, so it's up to hasNext() to set final state
-            if (transition.getLeft() == State.FINISHED) {
+            if (suggestedState == State.FINISHED) {
                 state = State.FINISHED;
             }
 
-            return transition.getLeft() != State.FINISHED;
+            return suggestedState != State.FINISHED;
         });
     }
 
     @Override
     public T next() {
         return LockUtils.withExclusiveLock(lock, () -> {
-            Pair<State, Integer> transition = suggestTransition();
-            state = transition.getLeft();
-            currentIndex = transition.getRight();
+            suggestTransition();
+            state = suggestedState;
+            currentIndex = suggestedIndex;
 
-            if (transition.getLeft() == State.FINISHED) {
+            if (suggestedState == State.FINISHED) {
                 throw new NoSuchElementException();
             }
 
@@ -91,54 +97,55 @@ public class ThreadSafeListOffsetIterator<T> implements Iterator<T> {
     }
 
     /**
-     * Calculates next state and index based on current values. Also updates {@link #startIndex} to ensure it's within
-     * the list boundaries (the list may have been modified during iteration).
-     *
-     * @return next state and index ({@link State#FINISHED}/{@value #FINISHED_INDEX} if there's nowhere to go)
+     * Calculates next state and index based on current values, storing them in {@link #suggestedState} and
+     * {@link #suggestedIndex} ({@link State#FINISHED}/{@value #FINISHED_INDEX} if there's nowhere to go). Also
+     * updates {@link #startIndex} to ensure it's within the list boundaries (the list may have been modified during
+     * iteration).
      */
-    private Pair<State, Integer> suggestTransition() {
+    private void suggestTransition() {
+        // both fields are only touched under the exclusive lock - no volatility needed
+        suggestedIndex = FINISHED_INDEX;
+
         if (items.isEmpty()) {
-            return Pair.of(State.FINISHED, FINISHED_INDEX);
+            suggestedState = State.FINISHED;
+            return;
         }
 
         // safeguard in case list size changes during iteration
         fixStartIndex();
         State newState = state.suggestTransition();
-        // not 'int' - null means calculation was overlooked
-        @SuppressWarnings("WrapperTypeMayBePrimitive")
-        Integer newIndex;
 
         switch (newState) {
             case FINISHED, NOT_STARTED:
-                newIndex = FINISHED_INDEX;
+                suggestedIndex = FINISHED_INDEX;
                 break;
 
             case AT_START_INDEX:
-                newIndex = startIndex;
+                suggestedIndex = startIndex;
                 break;
 
             case ROLLED_OVER_LIST_END:
-                newIndex = 0;
+                suggestedIndex = 0;
                 break;
 
             case MOVED_FORWARD:
-                newIndex = currentIndex + 1;
+                suggestedIndex = currentIndex + 1;
 
                 // end of list reached ('>=', 'not '==', because the list may shrink) -
                 // jump to #0 if startIndex isn't 0 (otherwise, the whole list has been processed)
-                if (newIndex >= items.size()) {
+                if (suggestedIndex >= items.size()) {
                     if (startIndex == 0) {
                         newState = State.FINISHED;
-                        newIndex = FINISHED_INDEX;
+                        suggestedIndex = FINISHED_INDEX;
                     } else {
                         newState = State.ROLLED_OVER_LIST_END;
-                        newIndex = 0;
+                        suggestedIndex = 0;
                     }
                 }
                 // went from #0 to startIndex (after rollover)
-                else if (newIndex == startIndex) {
+                else if (suggestedIndex == startIndex) {
                     newState = State.FINISHED;
-                    newIndex = FINISHED_INDEX;
+                    suggestedIndex = FINISHED_INDEX;
                 }
 
                 break;
@@ -147,7 +154,7 @@ public class ThreadSafeListOffsetIterator<T> implements Iterator<T> {
                 throw new IllegalStateException("Unknown transition state");
         }
 
-        return Pair.of(newState, newIndex);
+        suggestedState = newState;
     }
 
     /**

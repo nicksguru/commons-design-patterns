@@ -14,6 +14,7 @@ import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -42,8 +43,18 @@ public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Obje
             .maximumSize(CacheConstants.DEFAULT_CAFFEINE_CACHE_CAPACITY)
             .build();
 
+    /**
+     * State class ({@code S}) - the first materialized generic type of the concrete visitor class. Resolved once,
+     * in this field initializer, because it's constant per class; must be assigned before {@link #visitorClassRuntime}
+     * initialization, which reuses the resolved value.
+     */
+    @SuppressWarnings("unchecked")
+    private final Class<? extends S> stateClass = (Class<? extends S>) ReflectionUtils
+            .findFirstMaterializedGenericType(getClass(), StatefulReflectionVisitor.class)
+            .orElseThrow(() -> new IllegalStateException("Failed to infer state class"));
+
     private final VisitorClassRuntime visitorClassRuntime = VISITOR_CLASS_RUNTIMES.get(getClass(),
-            VisitorClassRuntime::createFor);
+            visitorClass -> VisitorClassRuntime.createFor(visitorClass, stateClass));
 
     /**
      * Creates a {@link #getStateClass() state object} to be passed to {@link #apply(Object, Object)}. For the
@@ -61,14 +72,13 @@ public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Obje
     }
 
     /**
-     * This method is {@code final} because it's called from constructor, so it must not have side effects regarding the
-     * incomplete {@code this}. It finds the first materialized generic type ({@code S}) of the class.
+     * This method is {@code final} because the state class resolution is fixed per concrete visitor class. Returns
+     * the first materialized generic type ({@code S}) of the class, resolved once in the constructor.
+     *
+     * @return state class resolved once, in the constructor
      */
-    @SuppressWarnings("unchecked")
     public final Class<? extends S> getStateClass() {
-        return (Class<? extends S>) ReflectionUtils
-                .findFirstMaterializedGenericType(getClass(), StatefulReflectionVisitor.class)
-                .orElseThrow(() -> new IllegalStateException("Failed to infer state class"));
+        return stateClass;
     }
 
     /**
@@ -167,23 +177,28 @@ public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Obje
                 .maximumSize(CacheConstants.DEFAULT_CAFFEINE_CACHE_CAPACITY)
                 .build();
 
+        /**
+         * Cache loader for {@link #visitorCache}, hoisted into a field because the method reference captures
+         * {@code this} - evaluated per call, it would allocate a fresh lambda on every lookup.
+         */
+        private final Function<Class<?>, Optional<VisitorDefinition>> visitorLoader =
+                this::findVisitorWithoutCache;
+
         private VisitorClassRuntime(SubclassBeforeSuperclassMap<?, VisitorDefinition> visitorDefinitions) {
             this.visitorDefinitions = visitorDefinitions;
         }
 
         /**
-         * Collects visitor definitions for the given visitor class, resolving its state class ({@code S}) from the
-         * generic declaration. Called on cache miss only, so the reflection scan runs once per visitor class; if it
-         * throws (invalid or missing visitor methods, or an unresolvable state class), the exception propagates to the
-         * constructor of the first instance.
+         * Collects visitor definitions for the given visitor class. Called on cache miss only, so the reflection scan
+         * runs once per visitor class; if it throws (invalid or missing visitor methods), the exception propagates to
+         * the constructor of the first instance.
          *
          * @param visitorClass visitor class to collect definitions for
+         * @param stateClass   visitor state class ({@code S}) resolved by the caller, so resolution happens exactly
+         *                     once per instance construction
          * @return runtime for the visitor class
          */
-        private static VisitorClassRuntime createFor(Class<?> visitorClass) {
-            Class<?> stateClass = ReflectionUtils
-                    .findFirstMaterializedGenericType(visitorClass, StatefulReflectionVisitor.class)
-                    .orElseThrow(() -> new IllegalStateException("Failed to infer state class"));
+        private static VisitorClassRuntime createFor(Class<?> visitorClass, Class<?> stateClass) {
             return new VisitorClassRuntime(VisitorDefinition.collectVisitorMethodsOrThrow(visitorClass, stateClass));
         }
 
@@ -196,7 +211,7 @@ public abstract class StatefulReflectionVisitor<S, O> implements BiFunction<Obje
         private Optional<VisitorDefinition> findVisitor(Class<?> visitableClass) {
             // 'get' method may return null as per Caffeine specs, but never does in this particular case -
             // because it stores (possibly empty) Optional's
-            return visitorCache.get(visitableClass, this::findVisitorWithoutCache);
+            return visitorCache.get(visitableClass, visitorLoader);
         }
 
         /**

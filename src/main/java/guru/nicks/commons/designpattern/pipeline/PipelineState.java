@@ -31,9 +31,16 @@ public class PipelineState<I, O> {
     /**
      * In each pair, {@link Pair#getLeft()} is the step name, and {@link Pair#getRight()} is the step duration in
      * milliseconds. Technically, the same step (as an object) can be queued multiple times in a pipeline, therefore
-     * this is not a {@link Map}.
+     * this is not a {@link Map}. Empty when timing is disabled (see {@link #timingEnabled}).
      */
     private final List<Pair<String, Long>> stepDurations;
+
+    /**
+     * Whether per-step timing is recorded at all. Its only consumer is debug logging in {@link Pipeline#apply(Object)},
+     * so it's captured once (from {@code log.isDebugEnabled()}) - when debugging is off, no timestamps are taken and no
+     * durations recorded.
+     */
+    private final boolean timingEnabled;
 
     @Nullable
     private final I input;
@@ -45,20 +52,23 @@ public class PipelineState<I, O> {
     /**
      * Constructor.
      *
-     * @param input     pipeline input
-     * @param stepCount number of steps in the pipeline
+     * @param input         pipeline input
+     * @param stepCount     number of steps in the pipeline
+     * @param timingEnabled whether step timing should be recorded; when disabled, {@link #getMillisElapsed()} returns 0
+     *                      and {@link #getStepDurations()} is empty
      */
-    public PipelineState(@Nullable I input, int stepCount) {
+    public PipelineState(@Nullable I input, int stepCount, boolean timingEnabled) {
         this.input = input;
+        this.timingEnabled = timingEnabled;
         stepDurations = new ArrayList<>(stepCount);
     }
 
     /**
      * Returns the total time, in milliseconds, that the registered steps took. If a cached value is available (it's
      * reset by {@link #runAndRegisterStep(PipelineStep, PipelineStepRunner)}), it's returned, otherwise the sum of
-     * {@link #getStepDurations()} is calculated and cached.
+     * {@link #getStepDurations()} is calculated and cached. Returns 0 when timing is disabled.
      *
-     * @return total time the registered steps took
+     * @return total time the registered steps took (0 when timing is disabled)
      */
     public long getMillisElapsed() {
         if (millisElapsed.get() == MILLIS_ELAPSED_UNKNOWN) {
@@ -81,7 +91,8 @@ public class PipelineState<I, O> {
     }
 
     /**
-     * Runs the given step, adds an entry to {@link #getStepDurations()}, and resets {@link #getMillisElapsed()}.
+     * Runs the given step and, when timing is enabled, adds an entry to {@link #getStepDurations()} and resets
+     * {@link #getMillisElapsed()}.
      *
      * @param step       step to run
      * @param stepRunner step runner
@@ -93,14 +104,17 @@ public class PipelineState<I, O> {
             log.trace("Running pipeline step '{}'", stepName);
         }
 
+        // timing is consumed only by debug logging - don't pay for it when debugging is off.
         // Not Duration, to optimize speed. Not nanos, as such precision is not needed.
-        long millis = System.currentTimeMillis();
-        output = stepRunner.apply(input, output, step);
-        millis = System.currentTimeMillis() - millis;
+        long startMillis = timingEnabled ? System.currentTimeMillis() : 0L;
 
-        stepDurations.add(Pair.of(stepName, millis));
-        // reset, so getter will re-calculate it
-        millisElapsed.set(MILLIS_ELAPSED_UNKNOWN);
+        output = stepRunner.apply(input, output, step);
+
+        if (timingEnabled) {
+            stepDurations.add(Pair.of(stepName, System.currentTimeMillis() - startMillis));
+            // reset, so getter will re-calculate it
+            millisElapsed.set(MILLIS_ELAPSED_UNKNOWN);
+        }
     }
 
 }

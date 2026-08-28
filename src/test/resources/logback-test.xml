@@ -1,0 +1,16 @@
+<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Logback's no-config fallback level is INFO, but pipeline step timing is recorded only when this logger's
+         DEBUG is enabled (the timing's sole consumer is Pipeline.apply()'s debug log) - so tests asserting on step
+         durations and executed step counts need it enabled -->
+    <logger name="guru.nicks.commons.designpattern.pipeline.Pipeline" level="DEBUG"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

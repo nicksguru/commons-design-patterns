@@ -44,6 +44,9 @@ public class PipelineStepFeatureImpl {
      */
     private static final Cache<Class<? extends PipelineStep>, List<PipelineStepFeatureImpl>> FEATURE_CACHE = Caffeine
             .newBuilder()
+            // identity semantics on Class keys is correct, and weak keys let unloaded classes (and their
+            // classloaders) be garbage-collected instead of being pinned by this JVM-wide cache
+            .weakKeys()
             .maximumSize(CacheConstants.DEFAULT_CAFFEINE_CACHE_CAPACITY)
             .build();
 
