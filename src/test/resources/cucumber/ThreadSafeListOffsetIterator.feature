@@ -70,3 +70,24 @@ Feature: ThreadSafeListIterator
     When iteration finishes
     Then iteration result should be:
       |  |
+
+  Scenario: next() throws NoSuchElementException when the list empties between hasNext() and next()
+    Given iteration start index is 1
+    When the list becomes empty after hasNext is called
+    Then iteration should fail with NoSuchElementException
+
+  Scenario: Concurrent shrink during iteration never leaks IndexOutOfBoundsException
+    Given iteration start index is 2
+    When multiple threads iterate while the list shrinks and grows back
+    Then no IndexOutOfBoundsException should occur
+
+  Scenario: State accessors report iteration progress under the lock
+    Given iteration start index is 1
+    When a thread-safe list offset iterator is created
+    Then iterator state should be NOT_STARTED and current index should be -1
+    When the iterator advances one item
+    Then iterator state should be AT_START_INDEX and current index should be 1
+    When the iterator advances one item
+    Then iterator state should be MOVED_FORWARD and current index should be 2
+    When the iterator is drained
+    Then iterator state should be FINISHED and current index should be 0

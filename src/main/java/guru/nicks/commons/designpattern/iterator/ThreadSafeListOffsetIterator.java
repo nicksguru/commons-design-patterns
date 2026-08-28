@@ -2,7 +2,6 @@ package guru.nicks.commons.designpattern.iterator;
 
 import guru.nicks.commons.utils.LockUtils;
 
-import lombok.Getter;
 import org.apache.commons.lang3.ArrayUtils;
 
 import java.util.Iterator;
@@ -43,9 +42,7 @@ public class ThreadSafeListOffsetIterator<T> implements Iterator<T> {
      */
     private int startIndex;
 
-    @Getter
     private State state = State.NOT_STARTED;
-    @Getter
     private int currentIndex = FINISHED_INDEX;
 
     /**
@@ -88,12 +85,40 @@ public class ThreadSafeListOffsetIterator<T> implements Iterator<T> {
             state = suggestedState;
             currentIndex = suggestedIndex;
 
-            if (suggestedState == State.FINISHED) {
+            if (state == State.FINISHED) {
                 throw new NoSuchElementException();
+            }
+
+            // the StampedLock guards iterator state only, not the external list - it may shrink between the size
+            // check in suggestTransition() and this read, so never leak IndexOutOfBoundsException
+            if (currentIndex >= items.size()) {
+                state = State.FINISHED;
+                currentIndex = FINISHED_INDEX;
+                throw new NoSuchElementException("List shrank during iteration");
             }
 
             return items.get(currentIndex);
         });
+    }
+
+    /**
+     * Returns current iterator state. Reads under the lock so external callers can't observe stale values.
+     *
+     * @return current state
+     */
+    public State getState() {
+        return LockUtils.withOptimisticReadOrRetry(lock, () -> state);
+    }
+
+    /**
+     * Returns index of the item returned by the last successful {@link #next()} call
+     * ({@value #FINISHED_INDEX} before the first call and after iteration end). Reads under the lock so external
+     * callers can't observe stale values.
+     *
+     * @return current index
+     */
+    public int getCurrentIndex() {
+        return LockUtils.withOptimisticReadOrRetry(lock, () -> currentIndex);
     }
 
     /**
