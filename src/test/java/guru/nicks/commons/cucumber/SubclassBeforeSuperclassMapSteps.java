@@ -13,6 +13,7 @@ import lombok.Value;
 import org.apache.commons.lang3.RandomUtils;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -34,6 +35,8 @@ public class SubclassBeforeSuperclassMapSteps {
     private final TextWorld textWorld;
 
     private SubclassBeforeSuperclassMap<Object, String> map;
+    private SubclassBeforeSuperclassMap<Object, String> anotherMap;
+    private Map<Class<?>, String> plainMap;
     private Optional<Map.Entry<Class<?>, String>> foundEntry;
     private String getOrDefaultResult;
     private String putIfAbsentResult;
@@ -262,6 +265,64 @@ public class SubclassBeforeSuperclassMapSteps {
         assertThat(map.keySet().stream().map(Class::getSimpleName).toList())
                 .as("map keys order")
                 .containsExactlyElementsOf(expectedEntries.stream().map(ClassEntry::getClassName).toList());
+    }
+
+    @Given("another map with the same entries")
+    public void anotherMapWithTheSameEntries() {
+        anotherMap = new SubclassBeforeSuperclassMap<>();
+        anotherMap.put(Integer.class, "integer");
+        anotherMap.put(Number.class, "number");
+    }
+
+    @Given("a plain LinkedHashMap with the same entries")
+    public void aPlainLinkedHashMapWithTheSameEntries() {
+        plainMap = new LinkedHashMap<>();
+        plainMap.put(Integer.class, "integer");
+        plainMap.put(Number.class, "number");
+    }
+
+    @Given("another map with different entries")
+    public void anotherMapWithDifferentEntries() {
+        anotherMap = new SubclassBeforeSuperclassMap<>();
+        anotherMap.put(Integer.class, "different");
+    }
+
+    @Then("the two maps should be equal")
+    public void theTwoMapsShouldBeEqual() {
+        assertThat(map)
+                .as("map")
+                .isEqualTo(anotherMap);
+        assertThat(anotherMap)
+                .as("anotherMap")
+                .isEqualTo(map);
+    }
+
+    @Then("the two maps should not be equal")
+    public void theTwoMapsShouldNotBeEqual() {
+        assertThat(map)
+                .as("map")
+                .isNotEqualTo(anotherMap);
+    }
+
+    @Then("their hash codes should be equal")
+    public void theirHashCodesShouldBeEqual() {
+        assertThat(map.hashCode())
+                .as("map.hashCode()")
+                .isEqualTo(anotherMap.hashCode());
+    }
+
+    @Then("the map should equal the plain map")
+    public void theMapShouldEqualThePlainMap() {
+        assertThat(map)
+                .as("map")
+                .isEqualTo(plainMap);
+    }
+
+    @Then("the plain map should equal the map")
+    public void thePlainMapShouldEqualTheMap() {
+        assertThat(plainMap)
+                .as("plainMap")
+                .isEqualTo(map);
     }
 
     @Then("no concurrency exceptions should occur")

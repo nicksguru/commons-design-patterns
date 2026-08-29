@@ -28,6 +28,9 @@ import java.util.stream.Collectors;
  *  <li>return optional {@code O}</li>
  * </ul>
  * If no visitors have been found, constructor fails because such class cannot 'visit' anything.
+ * <p>
+ * When a visited type is assignable to multiple registered visit parameter types that are not related to each other
+ * (e.g., a superclass and an interface), the visitor method registered first wins.
  *
  * @param <S> visitor state type
  * @param <O> visitor output type

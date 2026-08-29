@@ -73,6 +73,16 @@ public class ReflectionVisitorSteps {
         textWorld.setLastException(catchThrowable(InvalidMethodVisitor::new));
     }
 
+    @Given("a reflection visitor registers visit\\(UnrelatedBase) before visit\\(UnrelatedMarker)")
+    public void aReflectionVisitorRegistersBaseBeforeMarker() {
+        visitor = new BaseFirstVisitor();
+    }
+
+    @Given("a reflection visitor registers visit\\(UnrelatedMarker) before visit\\(UnrelatedBase)")
+    public void aReflectionVisitorRegistersMarkerBeforeBase() {
+        visitor = new MarkerFirstVisitor();
+    }
+
     @When("a null object is visited")
     public void aNullObjectIsVisited() {
         try {
@@ -91,6 +101,12 @@ public class ReflectionVisitorSteps {
     @When("a subclass object is visited")
     public void aSubclassObjectIsVisited() {
         visitedObject = new ChildTestObject();
+        result = visitor.apply(visitedObject);
+    }
+
+    @When("an UnrelatedChild object is visited")
+    public void anUnrelatedChildObjectIsVisited() {
+        visitedObject = new UnrelatedChild();
         result = visitor.apply(visitedObject);
     }
 
@@ -173,6 +189,16 @@ public class ReflectionVisitorSteps {
                 .isInstanceOf(Optional.class);
     }
 
+    @Then("the result should be {string}")
+    public void theResultShouldBe(String expectedResult) {
+        assertThat(result)
+                .as("result")
+                .isPresent();
+        assertThat(result.get())
+                .as("result.get()")
+                .isEqualTo(expectedResult);
+    }
+
     @Then("each object should be handled by the appropriate visitor method")
     public void eachObjectShouldBeHandledByTheAppropriateVisitorMethod() {
         assertThat(results)
@@ -227,6 +253,17 @@ public class ReflectionVisitorSteps {
     public static class ExceptionTrigger {
     }
 
+    // UnrelatedChild is assignable to BOTH ancestors, which are not related to each other - dispatch must
+    // follow registration order, not type specificity
+    public static class UnrelatedBase {
+    }
+
+    public interface UnrelatedMarker {
+    }
+
+    public static class UnrelatedChild extends UnrelatedBase implements UnrelatedMarker {
+    }
+
     public static class TestVisitor extends ReflectionVisitor<String> {
 
         @ReflectionVisitorMethod
@@ -255,6 +292,56 @@ public class ReflectionVisitorSteps {
         @ReflectionVisitorMethod
         public Optional<String> visit(ChildTestObject child) {
             return Optional.of("Visited ChildTestObject");
+        }
+    }
+
+    /**
+     * Registers visit(UnrelatedBase) BEFORE visit(UnrelatedMarker): the method scan is breadth-first from the
+     * visitor class itself up, so the own visit(UnrelatedBase) registers before the superclass's
+     * visit(UnrelatedMarker) - for UnrelatedChild (assignable to both unrelated ancestors) the first-registered
+     * method must win. Splitting across classes keeps the order deterministic: getDeclaredMethods order within
+     * a single class is JVM-specific.
+     */
+    public static class BaseFirstVisitor extends MarkerMethodVisitor {
+
+        @ReflectionVisitorMethod
+        public Optional<String> visit(UnrelatedBase base) {
+            return Optional.of("Visited UnrelatedBase");
+        }
+    }
+
+    /**
+     * Declares the marker-ancestor visit method that {@link BaseFirstVisitor} registers SECOND (superclass
+     * methods are scanned after the subclass's own).
+     */
+    public static class MarkerMethodVisitor extends ReflectionVisitor<String> {
+
+        @ReflectionVisitorMethod
+        public Optional<String> visit(UnrelatedMarker marker) {
+            return Optional.of("Visited UnrelatedMarker");
+        }
+    }
+
+    /**
+     * Registers visit(UnrelatedMarker) BEFORE visit(UnrelatedBase) - reverse of {@link BaseFirstVisitor},
+     * pinning that dispatch follows registration order, not type specificity.
+     */
+    public static class MarkerFirstVisitor extends BaseMethodVisitor {
+
+        @ReflectionVisitorMethod
+        public Optional<String> visit(UnrelatedMarker marker) {
+            return Optional.of("Visited UnrelatedMarker");
+        }
+    }
+
+    /**
+     * Declares the base-ancestor visit method that {@link MarkerFirstVisitor} registers SECOND.
+     */
+    public static class BaseMethodVisitor extends ReflectionVisitor<String> {
+
+        @ReflectionVisitorMethod
+        public Optional<String> visit(UnrelatedBase base) {
+            return Optional.of("Visited UnrelatedBase");
         }
     }
 

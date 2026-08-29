@@ -47,3 +47,13 @@ Feature: ReflectionVisitor Pattern
     Given a reflection visitor is created with methods for different types
     When objects of different types are visited
     Then each object should be handled by the appropriate visitor method
+
+  Scenario: Visitor dispatches to the first registered method for unrelated ancestor types
+    Given a reflection visitor registers visit(UnrelatedBase) before visit(UnrelatedMarker)
+    When an UnrelatedChild object is visited
+    Then the result should be "Visited UnrelatedBase"
+
+  Scenario: Visitor dispatches to the first registered method for unrelated ancestor types in reverse order
+    Given a reflection visitor registers visit(UnrelatedMarker) before visit(UnrelatedBase)
+    When an UnrelatedChild object is visited
+    Then the result should be "Visited UnrelatedMarker"
