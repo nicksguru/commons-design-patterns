@@ -50,6 +50,8 @@ import static guru.nicks.commons.validation.dsl.ValiDsl.checkNotNull;
  *       another thread is putting something leads to unpredictable results</li>
  *  <li>{@link #findEntryForClosestSuperclass(Class)}</li>
  *  <li>{@link #toString()}</li>
+ *  <li>{@link #equals(Object)}</li>
+ *  <li>{@link #hashCode()}</li>
  * </ul>
  * <p>
  * This class does not inherit from {@link LinkedHashMap}, rather decorates it, because the latter is a
@@ -148,11 +150,6 @@ public class SubclassBeforeSuperclassMap<K, V> implements Map<Class<? extends K>
     }
 
     @Override
-    public String toString() {
-        return LockUtils.withOptimisticReadOrRetry(lock, delegate::toString);
-    }
-
-    @Override
     public V getOrDefault(@Nullable Object key, @Nullable V defaultValue) {
         return LockUtils.withOptimisticReadOrRetry(lock, () -> delegate.getOrDefault(key, defaultValue));
     }
@@ -173,8 +170,8 @@ public class SubclassBeforeSuperclassMap<K, V> implements Map<Class<? extends K>
     }
 
     /**
-     * Replaces each value with the function result. The function runs under the exclusive lock, so it must be short
-     * and must not call back into this map (locks are not reentrant).
+     * Replaces each value with the function result. The function runs under the exclusive lock, so it must be short and
+     * must not call back into this map (locks are not reentrant).
      *
      * @param function function computing a new value from the key and the current value
      */
@@ -203,10 +200,10 @@ public class SubclassBeforeSuperclassMap<K, V> implements Map<Class<? extends K>
     }
 
     /**
-     * Computes the value only when the key is missing. The mapping function runs OUTSIDE the lock (user code under
-     * the lock could deadlock), so concurrent callers may compute the same value twice - last write wins.
+     * Computes the value only when the key is missing. The mapping function runs OUTSIDE the lock (user code under the
+     * lock could deadlock), so concurrent callers may compute the same value twice - last write wins.
      *
-     * @param key            key to look up
+     * @param key             key to look up
      * @param mappingFunction function computing the value for a missing key
      * @return current (existing or computed) value, {@code null} when the mapping function returned {@code null}
      */
@@ -262,8 +259,8 @@ public class SubclassBeforeSuperclassMap<K, V> implements Map<Class<? extends K>
     }
 
     /**
-     * Merges the given value with the current one. The remapping function runs under the exclusive lock, so it must
-     * be short and must not call back into this map (locks are not reentrant).
+     * Merges the given value with the current one. The remapping function runs under the exclusive lock, so it must be
+     * short and must not call back into this map (locks are not reentrant).
      *
      * @param key               key to look up
      * @param value             value to merge when the key is missing (or mapped to {@code null})
@@ -294,7 +291,51 @@ public class SubclassBeforeSuperclassMap<K, V> implements Map<Class<? extends K>
     }
 
     /**
+     * Content-based {@link Map}-contract hash code over the current entries (sum of entry hash codes, as per
+     * {@link Map#hashCode()}). Snapshot-consistent under concurrent mutation; inherited by subclasses.
+     *
+     * @return hash code of the current entries
+     */
+    @Override
+    public int hashCode() {
+        return LockUtils.withOptimisticReadOrRetry(lock, delegate::hashCode);
+    }
+
+    /**
+     * Content-based {@link Map}-contract equality over the current entries: equal to any {@link Map} (not only to
+     * another {@link SubclassBeforeSuperclassMap}) holding equal entries. Snapshot-consistent under concurrent
+     * mutation; inherited by subclasses.
+     *
+     * @param o object to compare against, may be any map
+     * @return true if {@code o} is a {@link Map} with equal entries
+     */
+    @Override
+    public boolean equals(@Nullable Object o) {
+        // identity shortcut: also avoids a lock round-trip for the trivial case
+        if (o == this) {
+            return true;
+        }
+
+        if (!(o instanceof Map)) {
+            return false;
+        }
+
+        // delegate's AbstractMap.equals does entrySet-based Map-contract comparison, symmetric with plain maps
+        return LockUtils.withOptimisticReadOrRetry(lock, () -> delegate.equals(o));
+    }
+
+    @Override
+    public String toString() {
+        return LockUtils.withOptimisticReadOrRetry(lock, delegate::toString);
+    }
+
+    /**
      * Finds map entry corresponding to the closest superclass (or direct class) of {@code clazz} in the key set.
+     * <p>
+     * Resolution semantics: an exact class match wins; otherwise the first key in insertion (registration) order that
+     * is assignable from the queried class is returned. For unrelated ancestor keys - e.g., a superclass and an
+     * interface both assignable from the queried class - the first-registered key wins; specificity (class vs
+     * interface, hierarchy distance) is NOT considered.
      *
      * @param clazz class to look up - it's <b>any class</b> intentionally, not only {@code K}
      * @return map entry (empty if the argument is {@code null})

@@ -122,3 +122,28 @@ Feature: SubclassBeforeSuperclassMap
   Scenario: Thread-safe operations
     When multiple threads concurrently put and get values
     Then map should maintain thread-safe consistency
+
+  Scenario: Maps with identical entries are equal with equal hash codes
+    Given a map with the following class entries:
+      | class   | value   |
+      | Integer | integer |
+      | Number  | number  |
+    And another map with the same entries
+    Then the two maps should be equal
+    And their hash codes should be equal
+
+  Scenario: Map equals a plain LinkedHashMap with the same entries
+    Given a map with the following class entries:
+      | class   | value   |
+      | Integer | integer |
+      | Number  | number  |
+    And a plain LinkedHashMap with the same entries
+    Then the map should equal the plain map
+    And the plain map should equal the map
+
+  Scenario: Maps with different entries are not equal
+    Given a map with the following class entries:
+      | class   | value   |
+      | Integer | integer |
+    And another map with different entries
+    Then the two maps should not be equal
