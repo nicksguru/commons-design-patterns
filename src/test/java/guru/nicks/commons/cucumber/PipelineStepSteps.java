@@ -74,6 +74,21 @@ public class PipelineStepSteps {
         pipelineStep = new AlphabeticalFeaturePipelineStep(features);
     }
 
+    @Given("a pipeline step with a package-private feature getter")
+    public void aPipelineStepWithAPackagePrivateFeatureGetter() {
+        pipelineStep = new PackagePrivateFeaturePipelineStep();
+    }
+
+    @Given("a pipeline step with non-comparable duplicate feature values")
+    public void aPipelineStepWithNonComparableDuplicateFeatureValues() {
+        pipelineStep = new NonComparableFeaturePipelineStep();
+    }
+
+    @Given("a pipeline step with reverse-alphabetical duplicate feature values")
+    public void aPipelineStepWithReverseAlphabeticalDuplicateFeatureValues() {
+        pipelineStep = new EncounterOrderFeaturePipelineStep();
+    }
+
     @When("I call toString on the pipeline step")
     public void iCallToStringOnThePipelineStep() {
         try {
@@ -220,6 +235,36 @@ public class PipelineStepSteps {
                 .matches("apple=a, monkey=m, zebra=z");
     }
 
+    @Then("the result should contain both non-comparable values")
+    public void theResultShouldContainBothNonComparableValues() {
+        assertThat(textWorld.getLastException())
+                .as("No exception should be thrown")
+                .isNull();
+
+        assertThat(toStringResult)
+                .as("toStringResult")
+                .contains("ComplexObject[value=first]", "ComplexObject[value=second]");
+    }
+
+    @Then("the duplicate feature values should appear in encounter order")
+    public void theDuplicateFeatureValuesShouldAppearInEncounterOrder() {
+        assertThat(textWorld.getLastException())
+                .as("No exception should be thrown")
+                .isNull();
+
+        Object value = featuresValues.get("orderedFeature");
+        assertThat(value)
+                .as("orderedFeature value")
+                .isInstanceOf(Set.class);
+
+        @SuppressWarnings("unchecked")
+        Set<String> valueSet = (Set<String>) value;
+        assertThat(valueSet)
+                .as("orderedFeature value set")
+                // encounter order (first-seen first), not natural order - 'zebra' getter is scanned first (own class)
+                .containsExactly("zebra", "apple");
+    }
+
     /**
      * Implementation of PipelineStep with duplicate feature names.
      */
@@ -353,6 +398,84 @@ public class PipelineStepSteps {
                     .findFirst()
                     .map(FeatureData::getValue)
                     .orElse(null);
+        }
+
+    }
+
+    /**
+     * Implementation of PipelineStep with a package-private feature getter - feature discovery must reject it with a
+     * 'must be public' error because feature values are read reflectively from another class.
+     */
+    public static class PackagePrivateFeaturePipelineStep extends PipelineStep<String, String> {
+
+        @Override
+        public String apply(String input, String output) {
+            return input;
+        }
+
+        @PipelineStepFeature(name = "packagePrivateFeature")
+        String getPackagePrivateFeature() {
+            return "value";
+        }
+
+    }
+
+    /**
+     * Implementation of PipelineStep with two same-named feature getters returning non-Comparable POJOs - rendering
+     * must not throw a far-from-cause ClassCastException.
+     */
+    public static class NonComparableFeaturePipelineStep extends PipelineStep<String, String> {
+
+        @Override
+        public String apply(String input, String output) {
+            return input;
+        }
+
+        @PipelineStepFeature(name = "nonComparableFeature")
+        public ComplexObject getFirstValue() {
+            return ComplexObject.builder()
+                    .value("first")
+                    .build();
+        }
+
+        @PipelineStepFeature(name = "nonComparableFeature")
+        public ComplexObject getSecondValue() {
+            return ComplexObject.builder()
+                    .value("second")
+                    .build();
+        }
+
+    }
+
+    /**
+     * Declares the 'apple' feature getter that {@link EncounterOrderFeaturePipelineStep} contributes SECOND: the
+     * method scan is breadth-first from the step class itself up, so superclass getters are read after the
+     * subclass's own - keeping the encounter order deterministic regardless of getDeclaredMethods order.
+     */
+    public static class AppleValueStep extends PipelineStep<String, String> {
+
+        @Override
+        public String apply(String input, String output) {
+            return input;
+        }
+
+        @PipelineStepFeature(name = "orderedFeature")
+        public String getAppleValue() {
+            return "apple";
+        }
+
+    }
+
+    /**
+     * Implementation of PipelineStep with two same-named feature getters whose values sort differently than they
+     * are read - multi-value rendering must keep encounter (first-seen) order: 'zebra' (own getter) before
+     * 'apple' (superclass getter).
+     */
+    public static class EncounterOrderFeaturePipelineStep extends AppleValueStep {
+
+        @PipelineStepFeature(name = "orderedFeature")
+        public String getZebraValue() {
+            return "zebra";
         }
 
     }

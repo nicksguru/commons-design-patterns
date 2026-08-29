@@ -38,3 +38,18 @@ Feature: PipelineStep advanced functionality
       | monkey | m     |
     When I call toString on the pipeline step
     Then the features should appear in alphabetical order
+
+  Scenario: Pipeline step feature discovery rejects a package-private feature getter
+    Given a pipeline step with a package-private feature getter
+    When I call getFeaturesValues on the pipeline step
+    Then the exception message should contain "must be public"
+
+  Scenario: Pipeline step with non-comparable duplicate feature values should render without failing
+    Given a pipeline step with non-comparable duplicate feature values
+    When I call toString on the pipeline step
+    Then the result should contain both non-comparable values
+
+  Scenario: Pipeline step with duplicate feature values keeps encounter order
+    Given a pipeline step with reverse-alphabetical duplicate feature values
+    When I call getFeaturesValues on the pipeline step
+    Then the duplicate feature values should appear in encounter order

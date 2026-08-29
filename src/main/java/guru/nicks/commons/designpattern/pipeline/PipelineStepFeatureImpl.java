@@ -18,11 +18,10 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.SortedSet;
-import java.util.TreeSet;
 import java.util.function.Function;
 
 import static guru.nicks.commons.validation.dsl.ValiDsl.check;
@@ -55,7 +54,9 @@ public class PipelineStepFeatureImpl {
 
     /**
      * Finds, in the given class, all methods annotated with {@link PipelineStepFeature @PipelineStepFeature}. Such
-     * methods may be private but must be callable from this class via {@link Method#setAccessible(boolean)}.
+     * methods must be public: the feature value is read reflectively from another class via plain
+     * {@link Method#invoke(Object, Object...)}, so non-public getters are rejected at registration time with a
+     * 'must be public' error.
      *
      * @param clazz step class to explore
      * @return step features (cached)
@@ -134,7 +135,8 @@ public class PipelineStepFeatureImpl {
     /**
      * Reads feature value (possibly different each time) and stores it, if it's not {@code null}, in the given
      * container. The same feature name can be bound to multiple getters, or the feature value may be an
-     * {@link Iterable} - in both cases the map value becomes a {@link SortedSet}.
+     * {@link Iterable} - in both cases the map value becomes a {@link LinkedHashSet} holding the values deduplicated
+     * in encounter order (first-seen first), with no {@link Comparable} requirement on the values.
      * <p>
      * First, this avoids duplicate values coming from multiple methods bound to a same-named feature. Second, for
      * generic methods, each method is found twice, the second time being a bridge method (with all generic types set to
@@ -164,13 +166,15 @@ public class PipelineStepFeatureImpl {
                 ? IterableUtils.toList(it)
                 : List.of(previousValue);
 
-        var sortedSet = new TreeSet<Object>(previousValues);
-        sortedSet.add(value);
+        // dedup in encounter order; no Comparable requirement - non-Comparable feature values must not poison
+        // Pipeline.toString() with a far-from-cause ClassCastException
+        var values = new LinkedHashSet<Object>(previousValues);
+        values.add(value);
 
         // if multiple values have been squashed into one - i.e. they're duplicates - store 'value', not '[value]'
-        whereToStore.put(name, (sortedSet.size() == 1)
-                ? sortedSet.first()
-                : Collections.unmodifiableSet(sortedSet));
+        whereToStore.put(name, (values.size() == 1)
+                ? values.iterator().next()
+                : Collections.unmodifiableSet(values));
     }
 
 }
