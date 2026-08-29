@@ -3,6 +3,7 @@ package guru.nicks.commons.cucumber;
 import guru.nicks.commons.cucumber.world.TextWorld;
 import guru.nicks.commons.designpattern.pipeline.Pipeline;
 import guru.nicks.commons.designpattern.pipeline.PipelineState;
+import guru.nicks.commons.designpattern.pipeline.PipelineState.StepDuration;
 import guru.nicks.commons.designpattern.pipeline.PipelineStep;
 import guru.nicks.commons.designpattern.pipeline.PipelineStepRunner;
 
@@ -16,7 +17,6 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.RequiredArgsConstructor;
 import lombok.Value;
-import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -157,17 +157,17 @@ public class PipelineSteps {
 
     @Then("the step durations should be recorded")
     public void theStepDurationsShouldBeRecorded() {
-        List<Pair<String, Long>> stepDurations = pipelineState.getStepDurations();
+        List<StepDuration> stepDurations = pipelineState.getStepDurations();
         assertThat(stepDurations)
                 .as("stepDurations")
                 .isNotEmpty();
 
-        for (Pair<String, Long> duration : stepDurations) {
-            assertThat(duration.getLeft())
-                    .as("duration.getLeft()")
+        for (StepDuration duration : stepDurations) {
+            assertThat(duration.stepName())
+                    .as("duration.stepName()")
                     .isNotEmpty();
-            assertThat(duration.getRight())
-                    .as("duration.getRight()")
+            assertThat(duration.durationMillis())
+                    .as("duration.durationMillis()")
                     .isNotNegative();
         }
     }
@@ -179,7 +179,7 @@ public class PipelineSteps {
                 .toList();
 
         List<String> actualStepNames = pipelineState.getStepDurations().stream()
-                .map(Pair::getLeft)
+                .map(StepDuration::stepName)
                 .map(name -> {
                     int lastDot = name.lastIndexOf('.');
                     return lastDot >= 0 ? name.substring(lastDot + 1) : name;

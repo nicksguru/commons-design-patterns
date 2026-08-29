@@ -114,7 +114,7 @@ public class Pipeline<I, O, S extends PipelineStep<I, O>>
                 break;
             }
 
-            state.runAndRegisterStep(step, stepRunner);
+            state.runStep(step, stepRunner);
             previousStep = step;
         }
 
@@ -122,7 +122,8 @@ public class Pipeline<I, O, S extends PipelineStep<I, O>>
             log.debug("Pipeline [{}] completed in {}ms: {}", getName(), state.getMillisElapsed(),
                     state.getStepDurations()
                             .stream()
-                            .map(stepInfo -> "%s:%dms".formatted(stepInfo.getLeft(), stepInfo.getRight()))
+                            .map(stepDuration -> "%s:%dms".formatted(stepDuration.stepName(),
+                                    stepDuration.durationMillis()))
                             .collect(Collectors.joining(" → ")));
         }
 
